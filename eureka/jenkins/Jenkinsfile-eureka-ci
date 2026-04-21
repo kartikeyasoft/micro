@@ -50,7 +50,7 @@ pipeline {
                         sh """
                             mvn sonar:sonar \
                                 -Dsonar.projectKey=com.ksapp:eureka \
-                                -Dsonar.projectName="eureka-v${env.SERVICE_VERSION}" \
+                                -Dsonar.projectName="eureka-${env.SERVICE_VERSION}" \
                                 -Dsonar.projectVersion=${env.SERVICE_VERSION} \
                                 -Dsonar.sources=src/main/java \
                                 -Dsonar.java.binaries=target/classes
