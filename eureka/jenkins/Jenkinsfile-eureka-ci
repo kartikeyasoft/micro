@@ -1,5 +1,7 @@
 @Library('jenkins-shared-lib-deno@main') _
 
+@Library('jenkins-shared-lib-deno@main') _
+
 pipeline {
     agent any
 
@@ -36,7 +38,7 @@ pipeline {
             }
         }
 
-        stage('Maven Compile for SonarQube') {
+        stage('Maven Compile') {
             steps {
                 dir('eureka') {
                     sh 'mvn clean compile -Dmaven.test.skip=true'
@@ -50,7 +52,7 @@ pipeline {
                     script {
                         sonarScan(
                             projectKey: 'com.ksapp:eureka',
-                            projectName: "Eureka Service Registry",
+                            projectName: 'Eureka_Service_Registry',
                             projectVersion: env.SERVICE_VERSION,
                             sources: 'src/main/java',
                             binaries: 'target/classes'
