@@ -15,13 +15,17 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git url: 'https://github.com/kartikeyasoft/eureka.git', branch: 'main'
+                dir('eureka') {
+                    git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
+                }
             }
         }
 
-        stage('Validate Parameters') {
+        stage('Validate') {
             steps {
                 script {
+                    echo "=========================================="
+                    echo "Eureka CD Pipeline"
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
@@ -36,21 +40,8 @@ pipeline {
 
         stage('Terraform Init') {
             steps {
-                dir('terraform/eureka') {
+                dir('eureka/terraform') {
                     sh 'terraform init'
-                }
-            }
-        }
-
-        stage('Terraform Plan') {
-            when { expression { params.ACTION == 'apply' } }
-            steps {
-                dir('terraform/eureka') {
-                    sh """
-                        terraform plan \
-                            -var="ami_id=${params.AMI_ID}" \
-                            -out=tfplan
-                    """
                 }
             }
         }
@@ -58,8 +49,11 @@ pipeline {
         stage('Terraform Apply') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                dir('terraform/eureka') {
-                    sh 'terraform apply -auto-approve tfplan'
+                dir('eureka/terraform') {
+                    sh """
+                        terraform apply -auto-approve \
+                            -var="ami_id=${params.AMI_ID}"
+                    """
                 }
             }
         }
@@ -67,16 +61,16 @@ pipeline {
         stage('Terraform Destroy') {
             when { expression { params.ACTION == 'destroy' } }
             steps {
-                dir('terraform/eureka') {
+                dir('eureka/terraform') {
                     sh 'terraform destroy -auto-approve'
                 }
             }
         }
 
-        stage('Output Deployment Info') {
+        stage('Output') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                dir('terraform/eureka') {
+                dir('eureka/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw eureka_public_ip", returnStdout: true).trim()
                         def dashboard_url = "http://${public_ip}:8761"
