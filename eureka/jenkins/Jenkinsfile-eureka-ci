@@ -50,7 +50,7 @@ pipeline {
                         sh """
                             mvn sonar:sonar \
                                 -Dsonar.projectKey=com.ksapp:eureka \
-                                -Dsonar.projectName="eureka-${env.SERVICE_VERSION}" \
+                                -Dsonar.projectName="Eureka_Service_Registry_v${env.SERVICE_VERSION}" \
                                 -Dsonar.projectVersion=${env.SERVICE_VERSION} \
                                 -Dsonar.sources=src/main/java \
                                 -Dsonar.java.binaries=target/classes
@@ -59,8 +59,6 @@ pipeline {
                 }
             }
         }
-
-        // Quality Gate stage removed - pipeline continues immediately
 
         stage('Maven Package') {
             steps {
@@ -107,11 +105,12 @@ pipeline {
                             '''
                             
                             script {
-                                def amiProps = readFile('eureka/packer/golden-ami.properties')
+                                // Read from current directory (eureka/packer)
+                                def amiProps = readFile('golden-ami.properties')
                                 env.AMI_ID = amiProps.split('=')[1].trim()
                                 echo "✅ Captured AMI ID: ${env.AMI_ID}"
                             }
-                            stash name: 'eureka-ami', includes: 'eureka/packer/golden-ami.properties'
+                            stash name: 'eureka-ami', includes: 'golden-ami.properties'
                         }
                     }
                 }
