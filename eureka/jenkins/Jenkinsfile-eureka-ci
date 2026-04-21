@@ -10,7 +10,7 @@ pipeline {
 
     environment {
         PATH = "/usr/bin:${env.PATH}"
-        NEXUS_URL = 'http://34.55.168.165:8081/repository/maven-releases'
+        NEXUS_URL = 'http://34.70.186.87:8081/repository/maven-releases'
         NEXUS_CREDS = credentials('nexus-creds')
         SERVICE_NAME = 'eureka'
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
