@@ -50,7 +50,7 @@ pipeline {
                     script {
                         sonarScan(
                             projectKey: 'com.ksapp:eureka',
-                            projectName: 'Eureka_Service_Registry',
+                            projectName: 'Eureka_Service_Registry_v${env.SERVICE_VERSION}',
                             projectVersion: env.SERVICE_VERSION,
                             sources: 'src/main/java',
                             binaries: 'target/classes'
