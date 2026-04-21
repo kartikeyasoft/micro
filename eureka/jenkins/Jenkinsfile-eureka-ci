@@ -61,15 +61,16 @@ pipeline {
                 }
             }
         }
-    stage('SonarQube Analysis') {
+stage('SonarQube Analysis') {
     steps {
-        script {
-            sonarScan(
-                projectKey: 'com.ksapp:eureka',
-                projectName: "eureka-${env.SERVICE_VERSION}",
-                sources: 'src/main/java',
-                binaries: 'target/classes'
-            )
+        dir('eureka') {
+            script {
+                sonarScan(
+                    projectKey: 'com.ksapp:eureka',
+                    projectName: "Eureka Service Registry v${env.SERVICE_VERSION}",
+                    sources: 'src/main/java'
+                )
+            }
         }
     }
 }
