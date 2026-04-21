@@ -1,5 +1,4 @@
 @Library('jenkins-shared-lib-deno@main') _
-
 pipeline {
     agent any
 
@@ -47,25 +46,21 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 dir('eureka') {
-                    script {
-                        sonarScan(
-                            projectKey: 'com.ksapp:eureka',
-                            projectName: 'Eureka_Service_Registry_v${env.SERVICE_VERSION}',
-                            projectVersion: env.SERVICE_VERSION,
-                            sources: 'src/main/java',
-                            binaries: 'target/classes'
-                        )
+                    withSonarQubeEnv('sonar') {
+                        sh """
+                            mvn sonar:sonar \
+                                -Dsonar.projectKey=com.ksapp:eureka \
+                                -Dsonar.projectName="Eureka_Service_Registry_v${env.SERVICE_VERSION}" \
+                                -Dsonar.projectVersion=${env.SERVICE_VERSION} \
+                                -Dsonar.sources=src/main/java \
+                                -Dsonar.java.binaries=target/classes
+                        """
                     }
                 }
             }
         }
 
-        stage('Quality Gate Check') {
-            steps {
-                   echo "Skipping quality gate check for now"
-                }
-            }
-        
+        // Quality Gate stage removed - pipeline continues immediately
 
         stage('Maven Package') {
             steps {
