@@ -1,0 +1,105 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'AMI_ID', defaultValue: '', description: 'Eureka AMI ID')
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+    }
+
+    environment {
+        AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_DEFAULT_REGION = 'us-east-1'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/kartikeyasoft/eureka.git', branch: 'main'
+            }
+        }
+
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "Action: ${params.ACTION}"
+                    echo "AMI ID: ${params.AMI_ID}"
+                    echo "=========================================="
+                    
+                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
+                        error "AMI_ID is required for apply action"
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                dir('terraform/eureka') {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('terraform/eureka') {
+                    sh """
+                        terraform plan \
+                            -var="ami_id=${params.AMI_ID}" \
+                            -out=tfplan
+                    """
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('terraform/eureka') {
+                    sh 'terraform apply -auto-approve tfplan'
+                }
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when { expression { params.ACTION == 'destroy' } }
+            steps {
+                dir('terraform/eureka') {
+                    sh 'terraform destroy -auto-approve'
+                }
+            }
+        }
+
+        stage('Output Deployment Info') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('terraform/eureka') {
+                    script {
+                        def public_ip = sh(script: "terraform output -raw eureka_public_ip", returnStdout: true).trim()
+                        def dashboard_url = "http://${public_ip}:8761"
+                        
+                        echo "=========================================="
+                        echo "✅ Eureka Deployed Successfully!"
+                        echo "=========================================="
+                        echo "AMI ID: ${params.AMI_ID}"
+                        echo "Public IP: ${public_ip}"
+                        echo "Dashboard: ${dashboard_url}"
+                        echo "=========================================="
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Eureka ${params.ACTION} completed successfully!"
+        }
+        failure {
+            echo "❌ Eureka ${params.ACTION} failed!"
+        }
+    }
+}
