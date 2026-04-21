@@ -81,15 +81,3 @@ resource "aws_instance" "eureka" {
     create_before_destroy = true
   }
 }
-
-# Elastic IP (Optional)
-resource "aws_eip" "eureka" {
-  count    = var.assign_eip ? 1 : 0
-  instance = aws_instance.eureka.id
-  domain   = "vpc"
-
-  tags = {
-    Name        = "eureka-eip-${var.environment}"
-    Environment = var.environment
-  }
-}
