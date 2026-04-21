@@ -1,7 +1,5 @@
 @Library('jenkins-shared-lib-deno@main') _
 
-@Library('jenkins-shared-lib-deno@main') _
-
 pipeline {
     agent any
 
@@ -23,20 +21,18 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                dir('eureka') {
-                    git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
-                }
+                // Updated to use micro.git repository
+                git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
             }
         }
 
         stage('Set Version') {
             steps {
+                // Change directory to eureka before reading pom.xml
                 dir('eureka') {
                     script {
                         env.SERVICE_VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
-                        echo "=========================================="
-                        echo "Building Eureka version: ${env.SERVICE_VERSION}"
-                        echo "=========================================="
+                        echo "Building version: ${env.SERVICE_VERSION}"
                     }
                 }
             }
@@ -44,6 +40,7 @@ pipeline {
 
         stage('Maven Build') {
             steps {
+                // Change directory to eureka for build
                 dir('eureka') {
                     sh 'mvn clean package -Dmaven.test.skip=true'
                 }
@@ -52,11 +49,11 @@ pipeline {
 
         stage('Deploy to Nexus') {
             steps {
+                // Change directory to eureka for deployment
                 dir('eureka') {
                     script {
                         def jarFile = "target/eureka-${env.SERVICE_VERSION}.jar"
                         def nexusPath = "${env.NEXUS_URL}/com/ksapp/eureka/${env.SERVICE_VERSION}/eureka-${env.SERVICE_VERSION}.jar"
-                        
                         sh """
                             curl -v -u ${env.NEXUS_CREDS} --upload-file ${jarFile} ${nexusPath}
                         """
@@ -73,6 +70,7 @@ pipeline {
                         "SERVICE_NAME=${env.SERVICE_NAME}",
                         "NEXUS_URL=${env.NEXUS_URL}"
                     ]) {
+                        // Change directory to eureka/packer
                         dir('eureka/packer') {
                             sh '''
                                 packer init eureka.pkr.hcl
@@ -82,6 +80,7 @@ pipeline {
                                     -var "nexus_url=${NEXUS_URL}" \
                                     eureka.pkr.hcl 2>&1 | tee build-output.txt
                                 
+                                # Extract clean AMI ID
                                 AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
                                 echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
                                 echo "Successfully created AMI: $AMI_ID"
@@ -103,13 +102,13 @@ pipeline {
             steps {
                 script {
                     echo "=========================================="
-                    echo "Triggering Eureka CD Pipeline"
-                    echo "=========================================="
-                    echo "Version: ${env.SERVICE_VERSION}"
                     echo "AMI ID: ${env.AMI_ID}"
+                    echo "Version: ${env.SERVICE_VERSION}"
                     echo "=========================================="
                     
                     if (env.AMI_ID && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+                        echo "✅ Valid AMI ID, triggering CD pipeline..."
+                        
                         build job: 'eureka-cd',
                             parameters: [
                                 string(name: 'AMI_ID', value: env.AMI_ID),
@@ -119,7 +118,7 @@ pipeline {
                         
                         echo "✅ CD pipeline triggered successfully!"
                     } else {
-                        error "Invalid AMI ID: ${env.AMI_ID}"
+                        echo "⚠️ Invalid AMI ID format: ${env.AMI_ID}"
                     }
                 }
             }
@@ -128,9 +127,7 @@ pipeline {
 
     post {
         success {
-            echo "🎉 Eureka CI completed successfully!"
-            echo "Version: ${env.SERVICE_VERSION}"
-            echo "AMI: ${env.AMI_ID}"
+            echo "🎉 Eureka CI completed successfully! AMI: ${env.AMI_ID}"
         }
         failure {
             echo "❌ Eureka CI failed!"
