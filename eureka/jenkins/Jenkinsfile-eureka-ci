@@ -1,11 +1,9 @@
 @Library('jenkins-shared-lib-deno@main') _
 
+@Library('jenkins-shared-lib-deno@main') _
+
 pipeline {
     agent any
-    
-    options {
-        cleanWs()
-    }
 
     tools {
         maven 'Maven-3.8'
