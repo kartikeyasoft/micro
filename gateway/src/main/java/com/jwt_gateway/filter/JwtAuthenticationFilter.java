@@ -16,6 +16,7 @@ import java.util.function.Predicate;
 
 @Component
 public class JwtAuthenticationFilter implements GatewayFilter {
+
     private final JwtUtil jwtUtil;
 
     public JwtAuthenticationFilter(JwtUtil jwtUtil) {
@@ -25,14 +26,6 @@ public class JwtAuthenticationFilter implements GatewayFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
-
-        System.out.println("Request URI: " + request.getURI());
-        System.out.println("Request Method: " + request.getMethod());
-        if (request.getMethod() == HttpMethod.OPTIONS) {
-            ServerHttpResponse response = exchange.getResponse();
-            response.setStatusCode(HttpStatus.OK);
-            return response.setComplete();
-        }
 
         // List of endpoints that do not require JWT authentication
         final List<String> apiEndpoints = List.of("/auth/register", "/auth/login", "/eureka");
@@ -61,24 +54,12 @@ public class JwtAuthenticationFilter implements GatewayFilter {
             }
         }
 
-        return chain.filter(exchange).doOnSuccess(aVoid -> {
-            ServerHttpResponse response = exchange.getResponse();
-            HttpStatus statusCode = (HttpStatus) response.getStatusCode();
-            if (statusCode != null) {
-                System.out.println("Response Status Code: " + statusCode.value());
-            } else {
-                System.out.println("Response Status Code is unknown");
-            }
-        });
+        return chain.filter(exchange);
     }
 
-    // Method to handle errors and send an unauthorized response
     private Mono<Void> onError(ServerWebExchange exchange, HttpStatus status) {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(status);
-
-        // Log error and set response
-        System.err.println("Unauthorized request: " + status + " at " + exchange.getRequest().getURI());
         return response.setComplete();
     }
 }
