@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'AMI_ID', defaultValue: '', description: 'Redis AMI ID (optional for destroy)')
+        string(name: 'AMI_ID', defaultValue: '', description: 'Redis AMI ID (leave empty for latest)')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
@@ -29,17 +29,8 @@ pipeline {
                     echo "AMI ID: ${params.AMI_ID}"
                     echo "=========================================="
                     
-                    // Only validate AMI_ID for apply action
-                    if (params.ACTION == 'apply') {
-                        if (!params.AMI_ID || params.AMI_ID == '') {
-                            error "AMI_ID is required for apply action. Received: '${params.AMI_ID}'"
-                        }
-                        if (!(params.AMI_ID =~ /^ami-[a-f0-9]{17}$/)) {
-                            error "Invalid AMI ID format: ${params.AMI_ID}"
-                        }
-                        echo "✅ Valid AMI ID: ${params.AMI_ID}"
-                    } else {
-                        echo "Destroy action - proceeding without AMI ID"
+                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
+                        echo "No AMI ID provided, will use latest from AWS"
                     }
                 }
             }
@@ -57,10 +48,16 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('redis/terraform') {
-                    sh """
-                        terraform apply -auto-approve \
-                            -var="ami_id=${params.AMI_ID}"
-                    """
+                    script {
+                        if (params.AMI_ID && params.AMI_ID != '') {
+                            sh """
+                                terraform apply -auto-approve \
+                                    -var="ami_id=${params.AMI_ID}"
+                            """
+                        } else {
+                            sh 'terraform apply -auto-approve'
+                        }
+                    }
                 }
             }
         }
@@ -80,12 +77,13 @@ pipeline {
                 dir('redis/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw redis_public_ip", returnStdout: true).trim()
+                        def api_url = sh(script: "terraform output -raw redis_api_url", returnStdout: true).trim()
+                        
                         echo "=========================================="
                         echo "✅ Redis Deployed Successfully!"
                         echo "=========================================="
-                        echo "AMI ID: ${params.AMI_ID}"
                         echo "Public IP: ${public_ip}"
-                        echo "Redis API: http://${public_ip}:1222"
+                        echo "API URL: ${api_url}"
                         echo "=========================================="
                     }
                 }
