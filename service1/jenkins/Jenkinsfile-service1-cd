@@ -5,37 +5,39 @@ pipeline {
 
     parameters {
         string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID')
-        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+        string(name: 'ACTION', defaultValue: 'apply', description: 'Terraform action (apply or destroy)')
     }
 
     environment {
-        // Only static values and credentials here
+        // AWS Credentials from Jenkins
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        
+        // Database credentials from Jenkins
+        DB_USERNAME = credentials('db-username')
+        DB_PASSWORD = credentials('db-password')
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
-                    // Load configurations from shared library
                     def awsCfg = awsConfig()
                     def dbCfg = dbConfig()
                     
-                    // Set environment variables from shared library
+                    // Set environment variables
                     env.AWS_DEFAULT_REGION = awsCfg.region
                     env.TF_VAR_environment = 'production'
                     env.DB_URL = dbCfg.url
-                    env.DB_USERNAME = credentials('db-username')
-                    env.DB_PASSWORD = credentials('db-password')
                     env.EUREKA_IP = '192.168.29.63'
                     env.EUREKA_URL = "http://${env.EUREKA_IP}:8761/eureka/"
                     
                     echo "=========================================="
                     echo "Service1 CD Pipeline"
                     echo "=========================================="
+                    echo "Action: ${params.ACTION}"
+                    echo "AMI ID: ${params.AMI_ID}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "Environment: ${env.TF_VAR_environment}"
                     echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "DB URL: ${env.DB_URL}"
                     echo "=========================================="
@@ -52,16 +54,11 @@ pipeline {
         stage('Validate') {
             steps {
                 script {
-                    echo "=========================================="
-                    echo "Service1 CD Pipeline"
-                    echo "=========================================="
-                    echo "Action: ${params.ACTION}"
-                    echo "AMI ID: ${params.AMI_ID}"
-                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "=========================================="
-                    
                     if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
                         error "AMI_ID is required for apply action"
+                    }
+                    if (params.ACTION != 'apply' && params.ACTION != 'destroy') {
+                        error "ACTION must be either 'apply' or 'destroy'"
                     }
                 }
             }
@@ -84,8 +81,8 @@ pipeline {
                             -var="ami_id=${params.AMI_ID}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="db_url=${env.DB_URL}" \
-                            -var="db_username=${env.DB_USERNAME}" \
-                            -var="db_password=${env.DB_PASSWORD}"
+                            -var="db_username=${DB_USERNAME}" \
+                            -var="db_password=${DB_PASSWORD}"
                     """
                 }
             }
@@ -115,7 +112,6 @@ pipeline {
                         echo "Public IP: ${public_ip}"
                         echo "Private IP: ${private_ip}"
                         echo "API URL: http://${public_ip}:9001"
-                        echo "Health Check: http://${public_ip}:9001/actuator/health"
                         echo "=========================================="
                     }
                 }
