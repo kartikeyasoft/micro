@@ -8,6 +8,12 @@ pipeline {
         jdk 'JDK-17'
     }
 
+    parameters {
+        string(name: 'EUREKA_IP', defaultValue: '192.168.29.63', description: 'Eureka Server IP')
+        string(name: 'SERVICE1_IP', defaultValue: '192.168.29.64', description: 'Service1 Server IP')
+        string(name: 'SERVICE2_IP', defaultValue: '192.168.29.65', description: 'Service2 Server IP')
+    }
+
     environment {
         PATH = "/usr/bin:${env.PATH}"
         
@@ -41,6 +47,9 @@ pipeline {
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "DB URL: ${dbCfg.url}"
                     echo "Service: ${env.SERVICE_NAME}"
+                    echo "Eureka IP: ${params.EUREKA_IP}"
+                    echo "Service1 IP: ${params.SERVICE1_IP}"
+                    echo "Service2 IP: ${params.SERVICE2_IP}"
                     echo "=========================================="
                 }
             }
@@ -152,6 +161,9 @@ pipeline {
                     echo "=========================================="
                     echo "Version: ${env.SERVICE_VERSION}"
                     echo "AMI ID: ${env.AMI_ID}"
+                    echo "Eureka IP: ${params.EUREKA_IP}"
+                    echo "Service1 IP: ${params.SERVICE1_IP}"
+                    echo "Service2 IP: ${params.SERVICE2_IP}"
                     echo "=========================================="
                     
                     if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
@@ -160,6 +172,9 @@ pipeline {
                         build job: 'gateway-cd',
                             parameters: [
                                 string(name: 'AMI_ID', value: env.AMI_ID),
+                                string(name: 'EUREKA_IP', value: params.EUREKA_IP),
+                                string(name: 'SERVICE1_IP', value: params.SERVICE1_IP),
+                                string(name: 'SERVICE2_IP', value: params.SERVICE2_IP),
                                 string(name: 'ACTION', value: 'apply')
                             ],
                             wait: false

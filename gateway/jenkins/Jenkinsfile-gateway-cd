@@ -26,7 +26,6 @@ pipeline {
         EUREKA_URL = ''
         SERVICE1_URL = ''
         SERVICE2_URL = ''
-        CORS_ORIGIN = '*'
     }
 
     stages {
@@ -57,7 +56,6 @@ pipeline {
                     echo "Service2 URL: ${env.SERVICE2_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "DB URL: ${env.DB_URL}"
-                    echo "CORS Origin: ${env.CORS_ORIGIN}"
                     echo "=========================================="
                 }
             }
@@ -77,13 +75,13 @@ pipeline {
                             error "AMI_ID is required for apply action"
                         }
                         if (!params.EUREKA_IP || params.EUREKA_IP == '') {
-                            error "EUREKA_IP is required for apply action"
+                            echo "⚠️ Warning: EUREKA_IP not provided. Gateway may not register correctly."
                         }
                         if (!params.SERVICE1_IP || params.SERVICE1_IP == '') {
-                            error "SERVICE1_IP is required for apply action"
+                            echo "⚠️ Warning: SERVICE1_IP not provided. Routes to Service1 may fail."
                         }
                         if (!params.SERVICE2_IP || params.SERVICE2_IP == '') {
-                            error "SERVICE2_IP is required for apply action"
+                            echo "⚠️ Warning: SERVICE2_IP not provided. Routes to Service2 may fail."
                         }
                     }
                 }
@@ -143,10 +141,9 @@ pipeline {
                         echo "Health Check: http://${public_ip}:8080/actuator/health"
                         echo "=========================================="
                         echo ""
-                        echo "📋 Service URLs for Frontend Config:"
+                        echo "📋 For Frontend Config:"
                         echo "  api_url: http://${public_ip}:8080"
                         echo "  image_url: http://${params.SERVICE1_IP}:9001"
-                        echo "  rabbitmq_url: http://${RABBITMQ_IP}:8001"
                         echo "=========================================="
                     }
                 }
