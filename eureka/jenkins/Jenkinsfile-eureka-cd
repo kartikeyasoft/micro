@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'AMI_ID', defaultValue: '', description: 'Eureka AMI ID')
+        string(name: 'AMI_ID', defaultValue: '', description: 'Eureka AMI ID (optional for destroy)')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
@@ -15,34 +15,49 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                // Updated to use micro.git repository
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
             }
         }
 
-     stage('Validate') {
-    steps {
-        script {
-            echo "Action: ${params.ACTION}"
-            
-            // Only check AMI_ID for apply
-            if (params.ACTION == 'apply' && !params.AMI_ID) {
-                error "AMI_ID is required for apply"
-            }
-            
-            // For destroy, just show a warning if AMI_ID is provided (it will be ignored)
-            if (params.ACTION == 'destroy' && params.AMI_ID) {
-                echo "⚠️ Warning: AMI_ID provided but will be ignored for destroy action"
+        stage('Validate') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "Eureka CD Pipeline"
+                    echo "=========================================="
+                    echo "Action: ${params.ACTION}"
+                    echo "AMI ID: ${params.AMI_ID}"
+                    echo "=========================================="
+                    
+                    // Only validate AMI_ID for apply action
+                    if (params.ACTION == 'apply') {
+                        if (!params.AMI_ID || params.AMI_ID == '') {
+                            error "AMI_ID is required for apply action"
+                        }
+                    }
+                    // For destroy, no validation needed - it will destroy existing resources
+                }
             }
         }
-    }
-}
 
         stage('Terraform Init') {
             steps {
-                // Change directory to eureka/terraform
                 dir('eureka/terraform') {
                     sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Import Security Group') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('eureka/terraform') {
+                    script {
+                        // Try to import existing security group (ignore if not exists)
+                        sh '''
+                            terraform import aws_security_group.eureka sg-06b5f08ca2552a7c9 2>/dev/null || true
+                        '''
+                    }
                 }
             }
         }
