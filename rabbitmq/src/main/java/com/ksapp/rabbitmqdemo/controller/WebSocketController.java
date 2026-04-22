@@ -1,4 +1,4 @@
-package com.example.rabbitmqdemo.controller;
+package com.ksapp.rabbitmqdemo.controller;
 
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
