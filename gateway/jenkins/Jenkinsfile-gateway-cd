@@ -1,0 +1,80 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'AMI_ID', defaultValue: '', description: 'Gateway AMI ID')
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+    }
+
+    environment {
+        AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_DEFAULT_REGION = 'us-east-1'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
+            }
+        }
+
+        stage('Validate') {
+            steps {
+                script {
+                    echo "Action: ${params.ACTION}"
+                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
+                        error "AMI_ID required for apply"
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                dir('gateway/terraform') {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('gateway/terraform') {
+                    sh "terraform apply -auto-approve -var='ami_id=${params.AMI_ID}'"
+                }
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when { expression { params.ACTION == 'destroy' } }
+            steps {
+                dir('gateway/terraform') {
+                    sh 'terraform destroy -auto-approve'
+                }
+            }
+        }
+
+        stage('Output') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('gateway/terraform') {
+                    script {
+                        def public_ip = sh(script: "terraform output -raw gateway_public_ip", returnStdout: true).trim()
+                        echo "✅ Gateway deployed at: http://${public_ip}:8080"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Gateway ${params.ACTION} completed!"
+        }
+        failure {
+            echo "❌ Gateway ${params.ACTION} failed!"
+        }
+    }
+}

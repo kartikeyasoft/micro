@@ -1,0 +1,143 @@
+---
+- name: Provision Gateway golden image
+  hosts: all
+  become: yes
+  vars:
+    app_user: "gateway"
+    app_name: "gateway"
+    app_version: "{{ lookup('env', 'SERVICE_VERSION') }}"
+    nexus_url: "{{ lookup('env', 'NEXUS_URL') }}"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install OpenJDK 17
+      apt:
+        name: openjdk-17-jre-headless
+        state: present
+        update_cache: yes
+        force: yes
+
+    - name: Create gateway user
+      user:
+        name: "{{ app_user }}"
+        system: yes
+        home: "/opt/{{ app_name }}"
+        create_home: yes
+
+    - name: Create application directory
+      file:
+        path: "/opt/{{ app_name }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0755"
+
+    - name: Create application.properties
+      copy:
+        content: |
+          server.port=8080
+          spring.application.name=gateway
+          
+          spring.datasource.url=jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC
+          spring.datasource.username=Admin
+          spring.datasource.password=Admin@123
+          spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+          
+          spring.jpa.hibernate.ddl-auto=update
+          spring.jpa.show-sql=true
+          spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
+          
+          spring.main.web-application-type=reactive
+          
+          eureka.client.service-url.defaultZone=http://192.168.29.63:8761/eureka/
+          
+          service1.url=http://192.168.29.64:9001
+          service2.url=http://192.168.29.65:9002
+          
+          cors.allowed.origins=http://192.168.29.61
+          
+          logging.level.com.jwt_gateway=INFO
+          logging.level.org.springframework.cloud.gateway=INFO
+        dest: "/opt/{{ app_name }}/application.properties"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0644"
+
+    - name: Create application.yml
+      copy:
+        content: |
+          server:
+            port: 8080
+          
+          spring:
+            application:
+              name: gateway
+            cloud:
+              gateway:
+                routes:
+                  - id: service1-route
+                    uri: http://192.168.29.64:9001
+                    predicates:
+                      - Path=/service1/**
+                  - id: service2-route
+                    uri: http://192.168.29.65:9002
+                    predicates:
+                      - Path=/service2/**
+                globalcors:
+                  cors-configurations:
+                    '[/**]':
+                      allowedOrigins: "http://192.168.29.61"
+                      allowedMethods: "*"
+          
+          eureka:
+            client:
+              service-url:
+                defaultZone: http://192.168.29.63:8761/eureka/
+        dest: "/opt/{{ app_name }}/application.yml"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0644"
+
+    - name: Download Gateway JAR from Nexus
+      get_url:
+        url: "{{ nexus_url }}/com/ksapp/gateway/{{ app_version }}/gateway-{{ app_version }}.jar"
+        dest: "/opt/{{ app_name }}/{{ app_name }}.jar"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0644"
+        timeout: 120
+      retries: 5
+      delay: 10
+
+    - name: Create systemd service file
+      copy:
+        content: |
+          [Unit]
+          Description=API Gateway Service
+          After=network.target
+          
+          [Service]
+          User={{ app_user }}
+          WorkingDirectory=/opt/{{ app_name }}
+          ExecStart=/usr/bin/java -jar /opt/{{ app_name }}/{{ app_name }}.jar
+          SuccessExitStatus=143
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+        dest: "/etc/systemd/system/{{ app_name }}.service"
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start service
+      systemd:
+        name: "{{ app_name }}"
+        enabled: yes
+        state: started

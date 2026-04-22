@@ -1,0 +1,72 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: ${SPRING_APP_NAME:gateway}
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+      httpclient:
+        connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:60000}
+        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:90s}
+      routes:
+        - id: service1-route
+          uri: ${SERVICE1_URL:http://localhost:9001}
+          predicates:
+            - Path=/service1/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - RewritePath=/service1/(?<segment>.*), /$\{segment}
+        - id: service2-route
+          uri: ${SERVICE2_URL:http://localhost:9002}
+          predicates:
+            - Path=/service2/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - RewritePath=/service2/(?<segment>.*), /$\{segment}
+        - id: auth-route
+          uri: ${GATEWAY_URL:http://localhost:8080}
+          predicates:
+            - Path=/auth/**
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: ${CORS_ALLOWED_ORIGINS:http://localhost}
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - Authorization
+              - Content-Type
+              - Accept
+              - Origin
+              - User-Agent
+              - DNT
+              - Cache-Control
+              - X-Mx-ReqToken
+              - X-Requested-With
+              - If-Modified-Since
+              - Keep-Alive
+              - X-Forwarded-For
+              - X-Forwarded-Proto
+              - X-Forwarded-Host
+              - X-Forwarded-Port
+              - Referer
+            allowCredentials: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP:true}
+
+logging:
+  level:
+    com.jwt_gateway: ${LOG_LEVEL:INFO}
