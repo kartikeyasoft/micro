@@ -1,5 +1,30 @@
+server:
+  port: 1222
+
+spring:
+  application:
+    name: redis-service
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+
 eureka:
   client:
     service-url:
-      defaultZone: http://192.168.29.63:8761/eureka/
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.cloud.client.ip-address}:${server.port}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.redis: ${LOG_LEVEL:INFO}
