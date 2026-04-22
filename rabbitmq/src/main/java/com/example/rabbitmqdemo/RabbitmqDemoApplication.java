@@ -1,4 +1,4 @@
-package com.ksapp.rabbitmqdemo;  // Changed package
+package com.ksapp.rabbitmqdemo;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
