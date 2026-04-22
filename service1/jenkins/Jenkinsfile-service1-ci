@@ -41,10 +41,14 @@ pipeline {
                     env.DB_PORT = dbCfg.port
                     env.DB_NAME = dbCfg.name
                     
-                    echo "Loaded configuration:"
-                    echo "  Nexus URL: ${env.NEXUS_URL}"
-                    echo "  AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "  DB Host: ${env.DB_HOST}"
+                    echo "=========================================="
+                    echo "Loaded Configuration"
+                    echo "=========================================="
+                    echo "Nexus URL: ${env.NEXUS_URL}"
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "DB URL: ${env.DB_URL}"
+                    echo "Service: ${env.SERVICE_NAME}"
+                    echo "=========================================="
                 }
             }
         }
@@ -62,6 +66,16 @@ pipeline {
                         env.SERVICE_VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
                         echo "Building version: ${env.SERVICE_VERSION}"
                     }
+                }
+            }
+        }
+
+        stage('Test Shared Library') {
+            steps {
+                script {
+                    def testConfig = nexusConfig()
+                    echo "Config: ${testConfig}"
+                    echo "URL: ${testConfig?.url}"
                 }
             }
         }
@@ -170,8 +184,7 @@ pipeline {
                         
                         echo "✅ CD pipeline triggered successfully!"
                     } else {
-                        echo "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
-                        error "Failed to capture valid AMI ID"
+                        error "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
                     }
                 }
             }

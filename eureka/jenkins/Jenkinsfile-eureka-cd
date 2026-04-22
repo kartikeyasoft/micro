@@ -9,20 +9,32 @@ pipeline {
     }
 
     environment {
-        // Load configurations from shared library
-        AWS_CFG = awsConfig()
-        
-        // AWS Configuration
+        // Only static values and credentials here
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        AWS_DEFAULT_REGION = AWS_CFG.region
-        
-        // Terraform variables
-        TF_VAR_ami_id = params.AMI_ID
-        TF_VAR_environment = 'production'
     }
 
     stages {
+        stage('Load Configuration') {
+            steps {
+                script {
+                    // Load configurations from shared library
+                    def awsCfg = awsConfig()
+                    
+                    // Set environment variables from shared library
+                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    env.TF_VAR_environment = 'production'
+                    
+                    echo "=========================================="
+                    echo "Loaded Configuration"
+                    echo "=========================================="
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "Environment: ${env.TF_VAR_environment}"
+                    echo "=========================================="
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
@@ -37,6 +49,7 @@ pipeline {
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "=========================================="
                     
                     if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
@@ -58,7 +71,10 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('eureka/terraform') {
-                    sh "terraform apply -auto-approve -var='ami_id=${params.AMI_ID}'"
+                    sh """
+                        terraform apply -auto-approve \
+                            -var="ami_id=${params.AMI_ID}"
+                    """
                 }
             }
         }
@@ -78,12 +94,16 @@ pipeline {
                 dir('eureka/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw eureka_public_ip", returnStdout: true).trim()
+                        def private_ip = sh(script: "terraform output -raw eureka_private_ip", returnStdout: true).trim()
+                        
                         echo "=========================================="
                         echo "✅ Eureka Deployed Successfully!"
                         echo "=========================================="
                         echo "AMI ID: ${params.AMI_ID}"
                         echo "Public IP: ${public_ip}"
+                        echo "Private IP: ${private_ip}"
                         echo "Dashboard: http://${public_ip}:8761"
+                        echo "Eureka URL: http://${private_ip}:8761/eureka/"
                         echo "=========================================="
                     }
                 }
