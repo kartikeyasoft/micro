@@ -14,11 +14,38 @@
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Install OpenJDK 17
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - wget
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Add deadsnakes PPA for Python (if needed)
+      apt_repository:
+        repo: ppa:deadsnakes/ppa
+        state: present
+
+    - name: Install Java 17
       apt:
         name: openjdk-17-jre-headless
         state: present
+        update_cache: yes
+        force: yes
 
+    - name: Verify Java installation
+      command: java -version
+      register: java_version
+      changed_when: false
+
+    - name: Display Java version
+      debug:
+        msg: "{{ java_version.stderr }}
     - name: Create rabbitmq user
       user:
         name: "{{ app_user }}"
