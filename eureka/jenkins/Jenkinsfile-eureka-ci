@@ -81,7 +81,66 @@ pipeline {
                 }
             }
         }
+        stage('Bake Golden Image') {
+            steps {
+                script {
+                    withEnv([
+                        "SERVICE_VERSION=${env.SERVICE_VERSION}",
+                        "SERVICE_NAME=${env.SERVICE_NAME}",
+                        "NEXUS_URL=${env.NEXUS_URL}"
+                    ]) {
+                        dir('eureka/packer') {
+                            sh '''
+                                packer init eureka.pkr.hcl
+                                packer build \
+                                    -var "service_version=${SERVICE_VERSION}" \
+                                    -var "service_name=${SERVICE_NAME}" \
+                                    -var "nexus_url=${NEXUS_URL}" \
+                                    eureka.pkr.hcl 2>&1 | tee build-output.txt
+                                
+                                AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
+                                echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
+                                echo "Successfully created AMI: $AMI_ID"
+                            '''
+                            
+                            script {
+                                // Read from current directory (eureka/packer)
+                                def amiProps = readFile('golden-ami.properties')
+                                env.AMI_ID = amiProps.split('=')[1].trim()
+                                echo "✅ Captured AMI ID: ${env.AMI_ID}"
+                            }
+                            stash name: 'eureka-ami', includes: 'golden-ami.properties'
+                        }
+                    }
+                }
+            }
+        }
 
+        stage('Trigger CD Pipeline') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "AMI ID: ${env.AMI_ID}"
+                    echo "Version: ${env.SERVICE_VERSION}"
+                    echo "=========================================="
+                    
+                    if (env.AMI_ID && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+                        echo "✅ Valid AMI ID, triggering CD pipeline..."
+                        
+                        build job: 'eureka-cd',
+                            parameters: [
+                                string(name: 'AMI_ID', value: env.AMI_ID),
+                                string(name: 'ACTION', value: 'apply')
+                            ],
+                            wait: false
+                        
+                        echo "✅ CD pipeline triggered successfully!"
+                    } else {
+                        echo "⚠️ Invalid AMI ID format: ${env.AMI_ID}"
+                    }
+                }
+            }
+        }
 
     }
 
