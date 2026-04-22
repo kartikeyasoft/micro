@@ -1,4 +1,4 @@
-package com.ksapp.rabbitmqdemo.config;  // Changed package
+package com.ksapp.rabbitmqdemo.config;
 
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
