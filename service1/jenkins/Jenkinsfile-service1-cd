@@ -1,18 +1,133 @@
-stage('Validate') {
-    steps {
-        script {
-            if (params.ACTION == 'apply') {
-                if (!params.AMI_ID || params.AMI_ID == '') {
-                    error "AMI_ID is required for apply action"
-                }
-                // Only validate EUREKA_IP if it's provided (for manual runs)
-                // In orchestrator, it will be provided
-                if (!params.EUREKA_IP || params.EUREKA_IP == '') {
-                    echo "⚠️ Warning: EUREKA_IP not provided. Service1 may not register correctly."
-                    echo "Continuing with deployment, but service won't register with Eureka."
-                    // Don't error, just warn
+@Library('jenkins-shared-lib-deno@main') _
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID')
+        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka Server IP (from orchestrator)')
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+    }
+
+    environment {
+        // AWS Credentials from Jenkins
+        AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        
+        // Database credentials from Jenkins
+        DB_USERNAME = credentials('db-username')
+        DB_PASSWORD = credentials('db-password')
+    }
+
+    stages {
+        stage('Load Configuration') {
+            steps {
+                script {
+                    def awsCfg = awsConfig()
+                    def dbCfg = dbConfig()
+                    
+                    // Validate required parameters for apply action
+                    if (params.ACTION == 'apply') {
+                        if (!params.EUREKA_IP || params.EUREKA_IP == '') {
+                            error "EUREKA_IP parameter is required for apply action!"
+                        }
+                        if (!params.AMI_ID || params.AMI_ID == '') {
+                            error "AMI_ID parameter is required for apply action!"
+                        }
+                    }
+                    
+                    // Set environment variables
+                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    env.DB_URL = dbCfg.url
+                    env.EUREKA_URL = "http://${params.EUREKA_IP}:8761/eureka/"
+                    
+                    echo "=========================================="
+                    echo "Service1 CD Pipeline"
+                    echo "=========================================="
+                    echo "Action: ${params.ACTION}"
+                    echo "AMI ID: ${params.AMI_ID}"
+                    echo "Eureka IP: ${params.EUREKA_IP}"
+                    echo "Eureka URL: ${env.EUREKA_URL}"
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "DB URL: ${env.DB_URL}"
+                    echo "DB User: ${env.DB_USERNAME}"
+                    echo "=========================================="
                 }
             }
+        }
+
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                dir('service1/terraform') {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('service1/terraform') {
+                    sh """
+                        terraform apply -auto-approve \
+                            -var="ami_id=${params.AMI_ID}" \
+                            -var="eureka_url=${env.EUREKA_URL}" \
+                            -var="db_url=${env.DB_URL}" \
+                            -var="db_username=${env.DB_USERNAME}" \
+                            -var="db_password=${env.DB_PASSWORD}"
+                    """
+                }
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when { expression { params.ACTION == 'destroy' } }
+            steps {
+                dir('service1/terraform') {
+                    sh 'terraform destroy -auto-approve'
+                }
+            }
+        }
+
+        stage('Output') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('service1/terraform') {
+                    script {
+                        def public_ip = sh(script: "terraform output -raw service1_public_ip", returnStdout: true).trim()
+                        def private_ip = sh(script: "terraform output -raw service1_private_ip", returnStdout: true).trim()
+                        
+                        echo "=========================================="
+                        echo "✅ Service1 Deployed Successfully!"
+                        echo "=========================================="
+                        echo "AMI ID: ${params.AMI_ID}"
+                        echo "Public IP: ${public_ip}"
+                        echo "Private IP: ${private_ip}"
+                        echo "API URL: http://${public_ip}:9001"
+                        echo "Health Check: http://${public_ip}:9001/actuator/health"
+                        echo "=========================================="
+                        echo ""
+                        echo "📋 Save this IP for orchestrator:"
+                        echo "  SERVICE1_IP=${private_ip}"
+                        echo "=========================================="
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Service1 ${params.ACTION} completed successfully!"
+        }
+        failure {
+            echo "❌ Service1 ${params.ACTION} failed!"
         }
     }
 }

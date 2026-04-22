@@ -9,7 +9,7 @@ pipeline {
     }
 
     parameters {
-        string(name: 'EUREKA_IP', defaultValue: '192.168.29.63', description: 'Eureka Server IP')
+        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka Server IP (from orchestrator)')
     }
 
     environment {
@@ -26,24 +26,31 @@ pipeline {
         // Database credentials from Jenkins
         DB_USERNAME = credentials('db-username')
         DB_PASSWORD = credentials('db-password')
-        
-        // Direct configuration
-        NEXUS_URL = 'http://172.21.12.151:8081/repository/maven-releases'
-        AWS_DEFAULT_REGION = 'us-east-1'
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
+                    def envCfg = envConfig()
                     def dbCfg = dbConfig()
                     
+                    // Validate required parameter
+                    if (!params.EUREKA_IP || params.EUREKA_IP == '') {
+                        error "EUREKA_IP parameter is required! This must be passed from orchestrator."
+                    }
+                    
+                    // Set environment variables from shared library
+                    env.NEXUS_URL = envCfg.nexus.url
+                    env.AWS_DEFAULT_REGION = envCfg.aws.region
+                    env.DB_URL = dbCfg.url
+                    
                     echo "=========================================="
-                    echo "Loaded Configuration"
+                    echo "Service1 CI Pipeline"
                     echo "=========================================="
                     echo "Nexus URL: ${env.NEXUS_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "DB URL: ${dbCfg.url}"
+                    echo "DB URL: ${env.DB_URL}"
                     echo "Service: ${env.SERVICE_NAME}"
                     echo "Eureka IP: ${params.EUREKA_IP}"
                     echo "=========================================="
