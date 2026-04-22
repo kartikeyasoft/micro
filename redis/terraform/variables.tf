@@ -5,13 +5,13 @@ variable "aws_region" {
 }
 
 variable "environment" {
-  description = "Environment name"
+  description = "Environment name (dev, staging, prod)"
   type        = string
   default     = "production"
 }
 
 variable "ami_id" {
-  description = "Redis AMI ID"
+  description = "Redis AMI ID (leave empty to use latest)"
   type        = string
   default     = ""
 }
