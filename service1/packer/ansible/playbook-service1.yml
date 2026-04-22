@@ -66,7 +66,7 @@
 
     - name: Download Service1 JAR from Nexus
       get_url:
-        url: "{{ nexus_url }}/com/ksapp/service1/{{ app_version }}/service1-{{ app_version }}.jar"
+        url: "https://raw.githubusercontent.com/kartikeyasoft/test/refs/heads/master/service1-1.0.0.jar"
         dest: "/opt/{{ app_name }}/{{ app_name }}.jar"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
