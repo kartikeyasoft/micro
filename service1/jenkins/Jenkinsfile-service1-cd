@@ -4,7 +4,7 @@ pipeline {
     agent any
 
     parameters {
-        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+        choice(name: 'ACTION', choices: ['auto', 'destroy'], description: 'Terraform action (auto = apply with latest AMI, destroy = remove infrastructure)')
     }
 
     environment {
@@ -19,6 +19,7 @@ pipeline {
         // Default values
         DEFAULT_EUREKA_IP = '192.168.29.63'
         DEFAULT_DB_URL = 'jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC'
+        DEFAULT_AWS_REGION = 'us-east-1'
         
         // These will be set in Load Configuration stage
         AWS_DEFAULT_REGION = ''
@@ -30,10 +31,8 @@ pipeline {
         stage('Load Configuration') {
             steps {
                 script {
-                    def awsCfg = awsConfig()
-                    
-                    // Set environment variables
-                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    // Set AWS region
+                    env.AWS_DEFAULT_REGION = DEFAULT_AWS_REGION
                     env.DB_URL = DEFAULT_DB_URL
                     env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
                     
@@ -42,9 +41,7 @@ pipeline {
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
                     echo "Eureka IP: ${DEFAULT_EUREKA_IP}"
-                    echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "DB URL: ${env.DB_URL}"
                     echo "=========================================="
                 }
             }
@@ -56,48 +53,40 @@ pipeline {
             }
         }
 
-        stage('Get Latest AMI') {
-            when { expression { params.ACTION == 'apply' } }
+        stage('Get AMI ID') {
+            when { expression { params.ACTION == 'auto' } }
             steps {
                 script {
-                    // Try to get from CI stash first
-                    def amiFromStash = null
+                    def amiId = null
+                    
+                    // Try to get from CI stash first (when triggered by CI)
                     try {
                         unstash 'service1-ami'
                         def amiProps = readFile('golden-ami.properties')
-                        amiFromStash = amiProps.split('=')[1].trim()
-                        echo "✅ Found AMI from CI: ${amiFromStash}"
+                        amiId = amiProps.split('=')[1].trim()
+                        echo "✅ Retrieved AMI from CI: ${amiId}"
                     } catch (Exception e) {
                         echo "No AMI found in stash, will query AWS for latest"
                     }
                     
                     // If not from CI, get latest from AWS
-                    if (amiFromStash) {
-                        env.AMI_ID = amiFromStash
-                    } else {
-                        env.AMI_ID = sh(script: """
+                    if (!amiId) {
+                        amiId = sh(script: """
                             aws ec2 describe-images \
+                                --region ${env.AWS_DEFAULT_REGION} \
                                 --owners self \
                                 --filters "Name=name,Values=myapp-service1-v*" \
                                 --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
                                 --output text
                         """, returnStdout: true).trim()
-                        echo "✅ Found latest AMI from AWS: ${env.AMI_ID}"
+                        echo "✅ Found latest AMI from AWS: ${amiId}"
                     }
-                }
-            }
-        }
-
-        stage('Validate') {
-            when { expression { params.ACTION == 'apply' } }
-            steps {
-                script {
-                    if (!env.AMI_ID || env.AMI_ID == '') {
+                    
+                    if (!amiId || amiId == '') {
                         error "No AMI ID found! Please run service1-ci first or ensure an AMI exists."
                     }
-                    if (!(env.AMI_ID =~ /^ami-[a-f0-9]{17}$/)) {
-                        error "Invalid AMI ID format: ${env.AMI_ID}"
-                    }
+                    
+                    env.AMI_ID = amiId
                     echo "✅ Using AMI ID: ${env.AMI_ID}"
                 }
             }
@@ -112,7 +101,7 @@ pipeline {
         }
 
         stage('Terraform Apply') {
-            when { expression { params.ACTION == 'apply' } }
+            when { expression { params.ACTION == 'auto' } }
             steps {
                 dir('service1/terraform') {
                     sh """
@@ -137,7 +126,7 @@ pipeline {
         }
 
         stage('Output') {
-            when { expression { params.ACTION == 'apply' } }
+            when { expression { params.ACTION == 'auto' } }
             steps {
                 dir('service1/terraform') {
                     script {
@@ -151,7 +140,6 @@ pipeline {
                         echo "Public IP: ${public_ip}"
                         echo "Private IP: ${private_ip}"
                         echo "API URL: http://${public_ip}:9001"
-                        echo "Health Check: http://${public_ip}:9001/actuator/health"
                         echo "=========================================="
                         echo ""
                         echo "📋 Save this IP for orchestrator:"

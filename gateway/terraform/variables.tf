@@ -2,6 +2,11 @@ variable "ami_id" {
   type = string
 }
 
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
+
 variable "eureka_url" {
   type    = string
   default = "http://localhost:8761/eureka/"

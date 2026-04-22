@@ -4,11 +4,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'AMI_ID', defaultValue: '', description: 'Gateway AMI ID')
-        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka Server IP')
-        string(name: 'SERVICE1_IP', defaultValue: '', description: 'Service1 Server IP')
-        string(name: 'SERVICE2_IP', defaultValue: '', description: 'Service2 Server IP')
-        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+        choice(name: 'ACTION', choices: ['auto', 'destroy'], description: 'Terraform action (auto = apply with latest AMI, destroy = remove infrastructure)')
     }
 
     environment {
@@ -19,6 +15,13 @@ pipeline {
         // Database credentials from Jenkins
         DB_USERNAME = credentials('db-username')
         DB_PASSWORD = credentials('db-password')
+        
+        // Default values
+        DEFAULT_AWS_REGION = 'us-east-1'
+        DEFAULT_EUREKA_IP = '192.168.29.63'
+        DEFAULT_SERVICE1_IP = '192.168.29.64'
+        DEFAULT_SERVICE2_IP = '192.168.29.65'
+        DEFAULT_DB_URL = 'jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC'
         
         // These will be set in Load Configuration stage
         AWS_DEFAULT_REGION = ''
@@ -32,29 +35,21 @@ pipeline {
         stage('Load Configuration') {
             steps {
                 script {
-                    // Load configurations from shared library
-                    def awsCfg = awsConfig()
-                    def dbCfg = dbConfig()
-                    
                     // Set environment variables
-                    env.AWS_DEFAULT_REGION = awsCfg.region
-                    env.DB_URL = dbCfg.url
-                    env.EUREKA_URL = "http://${params.EUREKA_IP}:8761/eureka/"
-                    env.SERVICE1_URL = "http://${params.SERVICE1_IP}:9001"
-                    env.SERVICE2_URL = "http://${params.SERVICE2_IP}:9002"
+                    env.AWS_DEFAULT_REGION = DEFAULT_AWS_REGION
+                    env.DB_URL = DEFAULT_DB_URL
+                    env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
+                    env.SERVICE1_URL = "http://${DEFAULT_SERVICE1_IP}:9001"
+                    env.SERVICE2_URL = "http://${DEFAULT_SERVICE2_IP}:9002"
                     
                     echo "=========================================="
                     echo "Gateway CD Pipeline"
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
-                    echo "AMI ID: ${params.AMI_ID}"
-                    echo "Eureka IP: ${params.EUREKA_IP}"
-                    echo "Service1 IP: ${params.SERVICE1_IP}"
-                    echo "Service2 IP: ${params.SERVICE2_IP}"
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "Service1 URL: ${env.SERVICE1_URL}"
                     echo "Service2 URL: ${env.SERVICE2_URL}"
-                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "DB URL: ${env.DB_URL}"
                     echo "=========================================="
                 }
@@ -67,23 +62,41 @@ pipeline {
             }
         }
 
-        stage('Validate') {
+        stage('Get AMI ID') {
+            when { expression { params.ACTION == 'auto' } }
             steps {
                 script {
-                    if (params.ACTION == 'apply') {
-                        if (!params.AMI_ID || params.AMI_ID == '') {
-                            error "AMI_ID is required for apply action"
-                        }
-                        if (!params.EUREKA_IP || params.EUREKA_IP == '') {
-                            echo "⚠️ Warning: EUREKA_IP not provided. Gateway may not register correctly."
-                        }
-                        if (!params.SERVICE1_IP || params.SERVICE1_IP == '') {
-                            echo "⚠️ Warning: SERVICE1_IP not provided. Routes to Service1 may fail."
-                        }
-                        if (!params.SERVICE2_IP || params.SERVICE2_IP == '') {
-                            echo "⚠️ Warning: SERVICE2_IP not provided. Routes to Service2 may fail."
-                        }
+                    def amiId = null
+                    
+                    // Try to get from CI stash first (when triggered by CI)
+                    try {
+                        unstash 'gateway-ami'
+                        def amiProps = readFile('golden-ami.properties')
+                        amiId = amiProps.split('=')[1].trim()
+                        echo "✅ Retrieved AMI from CI: ${amiId}"
+                    } catch (Exception e) {
+                        echo "No AMI found in stash, will query AWS for latest"
                     }
+                    
+                    // If not from CI, get latest from AWS
+                    if (!amiId) {
+                        amiId = sh(script: """
+                            aws ec2 describe-images \
+                                --region ${env.AWS_DEFAULT_REGION} \
+                                --owners self \
+                                --filters "Name=name,Values=myapp-gateway-v*" \
+                                --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+                                --output text
+                        """, returnStdout: true).trim()
+                        echo "✅ Found latest AMI from AWS: ${amiId}"
+                    }
+                    
+                    if (!amiId || amiId == '') {
+                        error "No AMI ID found! Please run gateway-ci first or ensure an AMI exists."
+                    }
+                    
+                    env.AMI_ID = amiId
+                    echo "✅ Using AMI ID: ${env.AMI_ID}"
                 }
             }
         }
@@ -97,16 +110,17 @@ pipeline {
         }
 
         stage('Terraform Apply') {
-            when { expression { params.ACTION == 'apply' } }
+            when { expression { params.ACTION == 'auto' } }
             steps {
                 dir('gateway/terraform') {
                     sh """
                         terraform apply -auto-approve \
-                            -var="ami_id=${params.AMI_ID}" \
+                            -var="ami_id=${env.AMI_ID}" \
+                            -var="aws_region=${env.AWS_DEFAULT_REGION}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="db_url=${env.DB_URL}" \
-                            -var="db_username=${env.DB_USERNAME}" \
-                            -var="db_password=${env.DB_PASSWORD}" \
+                            -var="db_username=${DB_USERNAME}" \
+                            -var="db_password=${DB_PASSWORD}" \
                             -var="service1_url=${env.SERVICE1_URL}" \
                             -var="service2_url=${env.SERVICE2_URL}"
                     """
@@ -124,7 +138,7 @@ pipeline {
         }
 
         stage('Output') {
-            when { expression { params.ACTION == 'apply' } }
+            when { expression { params.ACTION == 'auto' } }
             steps {
                 dir('gateway/terraform') {
                     script {
@@ -134,16 +148,15 @@ pipeline {
                         echo "=========================================="
                         echo "✅ Gateway Deployed Successfully!"
                         echo "=========================================="
-                        echo "AMI ID: ${params.AMI_ID}"
+                        echo "AMI ID: ${env.AMI_ID}"
                         echo "Public IP: ${public_ip}"
                         echo "Private IP: ${private_ip}"
                         echo "Gateway URL: http://${public_ip}:8080"
-                        echo "Health Check: http://${public_ip}:8080/actuator/health"
                         echo "=========================================="
                         echo ""
                         echo "📋 For Frontend Config:"
                         echo "  api_url: http://${public_ip}:8080"
-                        echo "  image_url: http://${params.SERVICE1_IP}:9001"
+                        echo "  image_url: http://${DEFAULT_SERVICE1_IP}:9001"
                         echo "=========================================="
                     }
                 }
