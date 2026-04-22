@@ -4,18 +4,16 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'AMI_ID', defaultValue: '', description: 'RabbitMQ Backend AMI ID')
-        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka Server IP')
-        string(name: 'REDIS_IP', defaultValue: '', description: 'Redis Server IP')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
     environment {
-        // AWS Credentials from Jenkins
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
         
-        // These will be set in Load Configuration stage
+        DEFAULT_EUREKA_IP = '192.168.29.63'
+        DEFAULT_REDIS_IP = '192.168.29.67'
+        
         AWS_DEFAULT_REGION = ''
         EUREKA_URL = ''
         REDIS_SERVICE_URL = ''
@@ -25,25 +23,13 @@ pipeline {
         stage('Load Configuration') {
             steps {
                 script {
-                    // Load configurations from shared library
                     def awsCfg = awsConfig()
                     
-                    // Set environment variables
                     env.AWS_DEFAULT_REGION = awsCfg.region
-                    env.EUREKA_URL = "http://${params.EUREKA_IP}:8761/eureka/"
-                    env.REDIS_SERVICE_URL = "http://${params.REDIS_IP}:1222/redis"
+                    env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
+                    env.REDIS_SERVICE_URL = "http://${DEFAULT_REDIS_IP}:1222/redis"
                     
-                    echo "=========================================="
-                    echo "RabbitMQ Backend CD Pipeline"
-                    echo "=========================================="
-                    echo "Action: ${params.ACTION}"
-                    echo "AMI ID: ${params.AMI_ID}"
-                    echo "Eureka IP: ${params.EUREKA_IP}"
-                    echo "Redis IP: ${params.REDIS_IP}"
-                    echo "Eureka URL: ${env.EUREKA_URL}"
-                    echo "Redis Service URL: ${env.REDIS_SERVICE_URL}"
-                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "=========================================="
+                    echo "RabbitMQ CD Pipeline - Action: ${params.ACTION}"
                 }
             }
         }
@@ -54,19 +40,22 @@ pipeline {
             }
         }
 
-        stage('Validate') {
+        stage('Get AMI ID') {
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
-                    if (params.ACTION == 'apply') {
-                        if (!params.AMI_ID || params.AMI_ID == '') {
-                            error "AMI_ID is required for apply action"
-                        }
-                        if (!params.EUREKA_IP || params.EUREKA_IP == '') {
-                            error "EUREKA_IP is required for apply action"
-                        }
-                        if (!params.REDIS_IP || params.REDIS_IP == '') {
-                            error "REDIS_IP is required for apply action"
-                        }
+                    try {
+                        unstash 'rabbitmq-ami'
+                        def amiProps = readFile('golden-ami.properties')
+                        env.AMI_ID = amiProps.split('=')[1].trim()
+                    } catch (Exception e) {
+                        env.AMI_ID = sh(script: """
+                            aws ec2 describe-images \
+                                --owners self \
+                                --filters "Name=name,Values=myapp-rabbitmq-backend-v*" \
+                                --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+                                --output text
+                        """, returnStdout: true).trim()
                     }
                 }
             }
@@ -86,7 +75,7 @@ pipeline {
                 dir('rabbitmq/terraform') {
                     sh """
                         terraform apply -auto-approve \
-                            -var="ami_id=${params.AMI_ID}" \
+                            -var="ami_id=${env.AMI_ID}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="redis_service_url=${env.REDIS_SERVICE_URL}"
                     """
@@ -109,29 +98,10 @@ pipeline {
                 dir('rabbitmq/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw rabbitmq_public_ip", returnStdout: true).trim()
-                        def private_ip = sh(script: "terraform output -raw rabbitmq_private_ip", returnStdout: true).trim()
-                        
-                        echo "=========================================="
-                        echo "✅ RabbitMQ Backend Deployed Successfully!"
-                        echo "=========================================="
-                        echo "AMI ID: ${params.AMI_ID}"
-                        echo "Public IP: ${public_ip}"
-                        echo "Private IP: ${private_ip}"
-                        echo "API URL: http://${public_ip}:8001"
-                        echo "WebSocket URL: ws://${public_ip}:8001/ws"
-                        echo "=========================================="
+                        echo "RabbitMQ deployed at: http://${public_ip}:8001"
                     }
                 }
             }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ RabbitMQ Backend ${params.ACTION} completed successfully!"
-        }
-        failure {
-            echo "❌ RabbitMQ Backend ${params.ACTION} failed!"
         }
     }
 }

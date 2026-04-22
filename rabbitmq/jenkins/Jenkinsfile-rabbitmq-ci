@@ -19,21 +19,27 @@ pipeline {
         // Service Configuration
         SERVICE_NAME = 'rabbitmq-backend'
         
-        // Direct configuration
-        NEXUS_URL = 'http://172.21.12.151:8081/repository/maven-releases'
-        AWS_DEFAULT_REGION = 'us-east-1'
+        // Eureka IP (can be overridden by passing environment variable)
+        EUREKA_IP = '192.168.29.63'
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
+                    def envCfg = envConfig()
+                    
+                    // Set environment variables
+                    env.NEXUS_URL = envCfg.nexus.url
+                    env.AWS_DEFAULT_REGION = envCfg.aws.region
+                    
                     echo "=========================================="
-                    echo "Loaded Configuration"
+                    echo "RabbitMQ CI Pipeline"
                     echo "=========================================="
                     echo "Nexus URL: ${env.NEXUS_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "Service: ${env.SERVICE_NAME}"
+                    echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "=========================================="
                 }
             }

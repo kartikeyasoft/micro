@@ -1,36 +1,58 @@
+@Library('jenkins-shared-lib-deno@main') _
+
 pipeline {
     agent any
 
     parameters {
-        string(name: 'AMI_ID', defaultValue: '', description: 'Redis AMI ID (leave empty for latest)')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
     environment {
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        AWS_DEFAULT_REGION = 'us-east-1'
+        
+        DEFAULT_EUREKA_IP = '192.168.29.63'
+        
+        AWS_DEFAULT_REGION = ''
+        EUREKA_URL = ''
     }
 
     stages {
+        stage('Load Configuration') {
+            steps {
+                script {
+                    def awsCfg = awsConfig()
+                    
+                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
+                    
+                    echo "Redis CD Pipeline - Action: ${params.ACTION}"
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
             }
         }
 
-        stage('Validate') {
+        stage('Get AMI ID') {
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
-                    echo "=========================================="
-                    echo "Redis CD Pipeline"
-                    echo "=========================================="
-                    echo "Action: ${params.ACTION}"
-                    echo "AMI ID: ${params.AMI_ID}"
-                    echo "=========================================="
-                    
-                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
-                        echo "No AMI ID provided, will use latest from AWS"
+                    try {
+                        unstash 'redis-ami'
+                        def amiProps = readFile('golden-ami.properties')
+                        env.AMI_ID = amiProps.split('=')[1].trim()
+                    } catch (Exception e) {
+                        env.AMI_ID = sh(script: """
+                            aws ec2 describe-images \
+                                --owners self \
+                                --filters "Name=name,Values=myapp-redis-service-v*" \
+                                --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+                                --output text
+                        """, returnStdout: true).trim()
                     }
                 }
             }
@@ -48,16 +70,11 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('redis/terraform') {
-                    script {
-                        if (params.AMI_ID && params.AMI_ID != '') {
-                            sh """
-                                terraform apply -auto-approve \
-                                    -var="ami_id=${params.AMI_ID}"
-                            """
-                        } else {
-                            sh 'terraform apply -auto-approve'
-                        }
-                    }
+                    sh """
+                        terraform apply -auto-approve \
+                            -var="ami_id=${env.AMI_ID}" \
+                            -var="eureka_url=${env.EUREKA_URL}"
+                    """
                 }
             }
         }
@@ -77,26 +94,10 @@ pipeline {
                 dir('redis/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw redis_public_ip", returnStdout: true).trim()
-                        def api_url = sh(script: "terraform output -raw redis_api_url", returnStdout: true).trim()
-                        
-                        echo "=========================================="
-                        echo "✅ Redis Deployed Successfully!"
-                        echo "=========================================="
-                        echo "Public IP: ${public_ip}"
-                        echo "API URL: ${api_url}"
-                        echo "=========================================="
+                        echo "Redis deployed at: http://${public_ip}:1222"
                     }
                 }
             }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ Redis ${params.ACTION} completed successfully!"
-        }
-        failure {
-            echo "❌ Redis ${params.ACTION} failed!"
         }
     }
 }
