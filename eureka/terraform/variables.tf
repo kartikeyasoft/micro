@@ -11,9 +11,9 @@ variable "environment" {
 }
 
 variable "ami_id" {
-  description = "Eureka AMI ID"
+  description = "Eureka AMI ID (optional for destroy)"
   type        = string
-  default     = ""
+  default     = ""  # Make it optional with default
 }
 
 variable "instance_type" {
