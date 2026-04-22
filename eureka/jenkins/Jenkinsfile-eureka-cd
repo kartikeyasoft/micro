@@ -32,10 +32,15 @@ pipeline {
                     // Only validate AMI_ID for apply action
                     if (params.ACTION == 'apply') {
                         if (!params.AMI_ID || params.AMI_ID == '') {
-                            error "AMI_ID is required for apply action"
+                            error "AMI_ID is required for apply action. Received: '${params.AMI_ID}'"
                         }
+                        // Validate AMI ID format
+                        if (!(params.AMI_ID =~ /^ami-[a-f0-9]{17}$/)) {
+                            error "Invalid AMI ID format: ${params.AMI_ID}. Expected format: ami-xxxxxxxxxxxxxxxxx"
+                        }
+                    } else {
+                        echo "Destroy action - AMI ID not required"
                     }
-                    // For destroy, no validation needed - it will destroy existing resources
                 }
             }
         }
@@ -55,7 +60,7 @@ pipeline {
                     script {
                         // Try to import existing security group (ignore if not exists)
                         sh '''
-                            terraform import aws_security_group.eureka sg-06b5f08ca2552a7c9 2>/dev/null || true
+                            terraform import aws_security_group.eureka sg-06b5f08ca2552a7c9 2>/dev/null || echo "Security group not found or already imported"
                         '''
                     }
                 }
