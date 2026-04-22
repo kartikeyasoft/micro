@@ -1,0 +1,101 @@
+---
+- name: Provision Service2 golden image
+  hosts: all
+  become: yes
+  vars:
+    app_user: "service2"
+    app_name: "service2"
+    app_version: "{{ lookup('env', 'SERVICE_VERSION') }}"
+    nexus_url: "{{ lookup('env', 'NEXUS_URL') }}"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install OpenJDK 17
+      apt:
+        name: openjdk-17-jre-headless
+        state: present
+        update_cache: yes
+        force: yes
+
+    - name: Create service2 user
+      user:
+        name: "{{ app_user }}"
+        system: yes
+        home: "/opt/{{ app_name }}"
+        create_home: yes
+
+    - name: Create application directory
+      file:
+        path: "/opt/{{ app_name }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0755"
+
+    - name: Create application.properties
+      copy:
+        content: |
+          server.port=9002
+          spring.application.name=service2
+          
+          spring.datasource.url=jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC
+          spring.datasource.username=Admin
+          spring.datasource.password=Admin@123
+          spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+          
+          spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
+          spring.jpa.hibernate.ddl-auto=update
+          spring.jpa.show-sql=true
+          
+          eureka.client.service-url.defaultZone=http://192.168.29.63:8761/eureka/
+          eureka.instance.prefer-ip-address=true
+          
+          logging.level.com.codingworld.service2=INFO
+        dest: "/opt/{{ app_name }}/application.properties"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0644"
+
+    - name: Download Service2 JAR from Nexus
+      get_url:
+        url: "{{ nexus_url }}/com/ksapp/service2/{{ app_version }}/service2-{{ app_version }}.jar"
+        dest: "/opt/{{ app_name }}/{{ app_name }}.jar"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0644"
+        timeout: 120
+      retries: 5
+      delay: 10
+
+    - name: Create systemd service file
+      copy:
+        content: |
+          [Unit]
+          Description=Service2 - Quiz Application Backend
+          After=network.target
+          
+          [Service]
+          User={{ app_user }}
+          WorkingDirectory=/opt/{{ app_name }}
+          ExecStart=/usr/bin/java -jar /opt/{{ app_name }}/{{ app_name }}.jar
+          SuccessExitStatus=143
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+        dest: "/etc/systemd/system/{{ app_name }}.service"
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start service
+      systemd:
+        name: "{{ app_name }}"
+        enabled: yes
+        state: started

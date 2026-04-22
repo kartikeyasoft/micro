@@ -1,0 +1,22 @@
+# AWS Configuration
+aws_region      = "us-east-1"
+environment     = "production"
+instance_type   = "t3.micro"
+
+# Network Configuration (Update with your values)
+subnet_id       = "subnet-0aa31e769c8f4d73e"
+vpc_id          = "vpc-0cb7deb47a6bfa727"
+key_name        = "ksansible"
+
+# Database Configuration
+db_host         = "172.21.12.151"
+db_name         = "exam"
+db_user         = "Admin"
+db_password     = "Admin@123"
+
+# Eureka Configuration
+eureka_url      = "http://192.168.29.63:8761/eureka/"
+
+# Optional
+assign_eip      = false
+# ami_id        = "ami-xxxxxxxxxxxxx"  # Uncomment to use specific AMI
