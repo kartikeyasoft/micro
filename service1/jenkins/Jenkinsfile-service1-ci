@@ -8,10 +8,6 @@ pipeline {
         jdk 'JDK-17'
     }
 
-    parameters {
-        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka IP (auto-populated by orchestrator)')
-    }
-
     environment {
         PATH = "/usr/bin:${env.PATH}"
         
@@ -27,8 +23,8 @@ pipeline {
         DB_USERNAME = credentials('db-username')
         DB_PASSWORD = credentials('db-password')
         
-        // Default value (used when running standalone)
-        DEFAULT_EUREKA_IP = '192.168.29.63'
+        // Eureka IP (can be overridden by passing environment variable)
+        EUREKA_IP = '192.168.29.63'
     }
 
     stages {
@@ -38,14 +34,10 @@ pipeline {
                     def envCfg = envConfig()
                     def dbCfg = dbConfig()
                     
-                    // Use parameter if provided, otherwise use default
-                    def eurekaIp = params.EUREKA_IP ?: env.DEFAULT_EUREKA_IP
-                    
                     // Set environment variables
                     env.NEXUS_URL = envCfg.nexus.url
                     env.AWS_DEFAULT_REGION = envCfg.aws.region
                     env.DB_URL = dbCfg.url
-                    env.EUREKA_IP = eurekaIp
                     
                     echo "=========================================="
                     echo "Service1 CI Pipeline"
@@ -54,7 +46,7 @@ pipeline {
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "DB URL: ${env.DB_URL}"
                     echo "Service: ${env.SERVICE_NAME}"
-                    echo "Eureka IP: ${env.EUREKA_IP} (${params.EUREKA_IP ? 'from orchestrator' : 'using default'})"
+                    echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "=========================================="
                 }
             }
