@@ -1,6 +1,6 @@
-package com.example.rabbitmqdemo.controller;
+package com.ksapp.rabbitmqdemo.controller;  // Changed package
 
-import com.example.rabbitmqdemo.service.MessageProducer;
+import com.ksapp.rabbitmqdemo.service.MessageProducer;  // Changed import
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
