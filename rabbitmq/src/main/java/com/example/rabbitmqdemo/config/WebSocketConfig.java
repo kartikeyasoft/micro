@@ -1,4 +1,4 @@
-package com.ksapp.rabbitmqdemo.config;  // Changed package
+package com.ksapp.rabbitmqdemo.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
