@@ -20,22 +20,23 @@ pipeline {
             }
         }
 
-        stage('Validate') {
-            steps {
-                script {
-                    echo "=========================================="
-                    echo "Eureka CD Pipeline"
-                    echo "=========================================="
-                    echo "Action: ${params.ACTION}"
-                    echo "AMI ID: ${params.AMI_ID}"
-                    echo "=========================================="
-                    
-                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
-                        error "AMI_ID is required for apply action"
-                    }
-                }
+     stage('Validate') {
+    steps {
+        script {
+            echo "Action: ${params.ACTION}"
+            
+            // Only check AMI_ID for apply
+            if (params.ACTION == 'apply' && !params.AMI_ID) {
+                error "AMI_ID is required for apply"
+            }
+            
+            // For destroy, just show a warning if AMI_ID is provided (it will be ignored)
+            if (params.ACTION == 'destroy' && params.AMI_ID) {
+                echo "⚠️ Warning: AMI_ID provided but will be ignored for destroy action"
             }
         }
+    }
+}
 
         stage('Terraform Init') {
             steps {
