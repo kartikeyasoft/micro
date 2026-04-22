@@ -1,18 +1,68 @@
+@Library('jenkins-shared-lib-deno@main') _
+
 pipeline {
     agent any
 
     parameters {
         string(name: 'AMI_ID', defaultValue: '', description: 'Gateway AMI ID')
+        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka Server IP')
+        string(name: 'SERVICE1_IP', defaultValue: '', description: 'Service1 Server IP')
+        string(name: 'SERVICE2_IP', defaultValue: '', description: 'Service2 Server IP')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
     environment {
+        // AWS Credentials from Jenkins
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        AWS_DEFAULT_REGION = 'us-east-1'
+        
+        // Database credentials from Jenkins
+        DB_USERNAME = credentials('db-username')
+        DB_PASSWORD = credentials('db-password')
+        
+        // These will be set in Load Configuration stage
+        AWS_DEFAULT_REGION = ''
+        DB_URL = ''
+        EUREKA_URL = ''
+        SERVICE1_URL = ''
+        SERVICE2_URL = ''
+        CORS_ORIGIN = '*'
     }
 
     stages {
+        stage('Load Configuration') {
+            steps {
+                script {
+                    // Load configurations from shared library
+                    def awsCfg = awsConfig()
+                    def dbCfg = dbConfig()
+                    
+                    // Set environment variables
+                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    env.DB_URL = dbCfg.url
+                    env.EUREKA_URL = "http://${params.EUREKA_IP}:8761/eureka/"
+                    env.SERVICE1_URL = "http://${params.SERVICE1_IP}:9001"
+                    env.SERVICE2_URL = "http://${params.SERVICE2_IP}:9002"
+                    
+                    echo "=========================================="
+                    echo "Gateway CD Pipeline"
+                    echo "=========================================="
+                    echo "Action: ${params.ACTION}"
+                    echo "AMI ID: ${params.AMI_ID}"
+                    echo "Eureka IP: ${params.EUREKA_IP}"
+                    echo "Service1 IP: ${params.SERVICE1_IP}"
+                    echo "Service2 IP: ${params.SERVICE2_IP}"
+                    echo "Eureka URL: ${env.EUREKA_URL}"
+                    echo "Service1 URL: ${env.SERVICE1_URL}"
+                    echo "Service2 URL: ${env.SERVICE2_URL}"
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "DB URL: ${env.DB_URL}"
+                    echo "CORS Origin: ${env.CORS_ORIGIN}"
+                    echo "=========================================="
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
@@ -22,9 +72,19 @@ pipeline {
         stage('Validate') {
             steps {
                 script {
-                    echo "Action: ${params.ACTION}"
-                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
-                        error "AMI_ID required for apply"
+                    if (params.ACTION == 'apply') {
+                        if (!params.AMI_ID || params.AMI_ID == '') {
+                            error "AMI_ID is required for apply action"
+                        }
+                        if (!params.EUREKA_IP || params.EUREKA_IP == '') {
+                            error "EUREKA_IP is required for apply action"
+                        }
+                        if (!params.SERVICE1_IP || params.SERVICE1_IP == '') {
+                            error "SERVICE1_IP is required for apply action"
+                        }
+                        if (!params.SERVICE2_IP || params.SERVICE2_IP == '') {
+                            error "SERVICE2_IP is required for apply action"
+                        }
                     }
                 }
             }
@@ -42,7 +102,16 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('gateway/terraform') {
-                    sh "terraform apply -auto-approve -var='ami_id=${params.AMI_ID}'"
+                    sh """
+                        terraform apply -auto-approve \
+                            -var="ami_id=${params.AMI_ID}" \
+                            -var="eureka_url=${env.EUREKA_URL}" \
+                            -var="db_url=${env.DB_URL}" \
+                            -var="db_username=${env.DB_USERNAME}" \
+                            -var="db_password=${env.DB_PASSWORD}" \
+                            -var="service1_url=${env.SERVICE1_URL}" \
+                            -var="service2_url=${env.SERVICE2_URL}"
+                    """
                 }
             }
         }
@@ -62,7 +131,23 @@ pipeline {
                 dir('gateway/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw gateway_public_ip", returnStdout: true).trim()
-                        echo "✅ Gateway deployed at: http://${public_ip}:8080"
+                        def private_ip = sh(script: "terraform output -raw gateway_private_ip", returnStdout: true).trim()
+                        
+                        echo "=========================================="
+                        echo "✅ Gateway Deployed Successfully!"
+                        echo "=========================================="
+                        echo "AMI ID: ${params.AMI_ID}"
+                        echo "Public IP: ${public_ip}"
+                        echo "Private IP: ${private_ip}"
+                        echo "Gateway URL: http://${public_ip}:8080"
+                        echo "Health Check: http://${public_ip}:8080/actuator/health"
+                        echo "=========================================="
+                        echo ""
+                        echo "📋 Service URLs for Frontend Config:"
+                        echo "  api_url: http://${public_ip}:8080"
+                        echo "  image_url: http://${params.SERVICE1_IP}:9001"
+                        echo "  rabbitmq_url: http://${RABBITMQ_IP}:8001"
+                        echo "=========================================="
                     }
                 }
             }
@@ -71,7 +156,7 @@ pipeline {
 
     post {
         success {
-            echo "✅ Gateway ${params.ACTION} completed!"
+            echo "✅ Gateway ${params.ACTION} completed successfully!"
         }
         failure {
             echo "❌ Gateway ${params.ACTION} failed!"

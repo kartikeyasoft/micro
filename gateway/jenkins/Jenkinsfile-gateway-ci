@@ -10,15 +10,42 @@ pipeline {
 
     environment {
         PATH = "/usr/bin:${env.PATH}"
-        NEXUS_URL = 'http://172.21.12.151:8081/repository/maven-releases'
+        
+        // Credentials from Jenkins
         NEXUS_CREDS = credentials('nexus-creds')
-        SERVICE_NAME = 'gateway'
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        
+        // Service Configuration
+        SERVICE_NAME = 'gateway'
+        
+        // Database credentials from Jenkins
+        DB_USERNAME = credentials('db-username')
+        DB_PASSWORD = credentials('db-password')
+        
+        // Direct configuration
+        NEXUS_URL = 'http://172.21.12.151:8081/repository/maven-releases'
         AWS_DEFAULT_REGION = 'us-east-1'
     }
 
     stages {
+        stage('Load Configuration') {
+            steps {
+                script {
+                    def dbCfg = dbConfig()
+                    
+                    echo "=========================================="
+                    echo "Loaded Configuration"
+                    echo "=========================================="
+                    echo "Nexus URL: ${env.NEXUS_URL}"
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "DB URL: ${dbCfg.url}"
+                    echo "Service: ${env.SERVICE_NAME}"
+                    echo "=========================================="
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
@@ -76,7 +103,7 @@ pipeline {
                         def jarFile = "target/gateway-${env.SERVICE_VERSION}.jar"
                         def nexusPath = "${env.NEXUS_URL}/com/ksapp/gateway/${env.SERVICE_VERSION}/gateway-${env.SERVICE_VERSION}.jar"
                         sh """
-                            curl -f -u ${env.NEXUS_CREDS} --upload-file ${jarFile} ${nexusPath}
+                            curl -v -u ${env.NEXUS_CREDS} --upload-file ${jarFile} ${nexusPath}
                         """
                     }
                 }
@@ -120,14 +147,26 @@ pipeline {
         stage('Trigger CD Pipeline') {
             steps {
                 script {
-                    if (env.AMI_ID && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+                    echo "=========================================="
+                    echo "Triggering CD Pipeline"
+                    echo "=========================================="
+                    echo "Version: ${env.SERVICE_VERSION}"
+                    echo "AMI ID: ${env.AMI_ID}"
+                    echo "=========================================="
+                    
+                    if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+                        echo "✅ Valid AMI ID, triggering CD pipeline..."
+                        
                         build job: 'gateway-cd',
                             parameters: [
                                 string(name: 'AMI_ID', value: env.AMI_ID),
                                 string(name: 'ACTION', value: 'apply')
                             ],
                             wait: false
-                        echo "✅ CD pipeline triggered!"
+                        
+                        echo "✅ CD pipeline triggered successfully!"
+                    } else {
+                        error "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
                     }
                 }
             }
@@ -136,7 +175,7 @@ pipeline {
 
     post {
         success {
-            echo "🎉 Gateway CI completed! AMI: ${env.AMI_ID}"
+            echo "🎉 Gateway CI completed successfully! AMI: ${env.AMI_ID}"
         }
         failure {
             echo "❌ Gateway CI failed!"
