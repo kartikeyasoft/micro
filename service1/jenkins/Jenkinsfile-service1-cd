@@ -4,44 +4,40 @@ pipeline {
     agent any
 
     parameters {
-        choice(name: 'ACTION', choices: ['auto', 'destroy'], description: 'Terraform action (auto = apply with latest AMI, destroy = remove infrastructure)')
+        string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID')
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
     environment {
-        // AWS Credentials from Jenkins
+        // Only static values and credentials here
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        
-        // Database credentials from Jenkins
-        DB_USERNAME = credentials('db-username')
-        DB_PASSWORD = credentials('db-password')
-        
-        // Default values
-        DEFAULT_EUREKA_IP = '192.168.29.63'
-        DEFAULT_DB_URL = 'jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC'
-        DEFAULT_AWS_REGION = 'us-east-1'
-        
-        // These will be set in Load Configuration stage
-        AWS_DEFAULT_REGION = ''
-        DB_URL = ''
-        EUREKA_URL = ''
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
-                    // Set AWS region
-                    env.AWS_DEFAULT_REGION = DEFAULT_AWS_REGION
-                    env.DB_URL = DEFAULT_DB_URL
-                    env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
+                    // Load configurations from shared library
+                    def awsCfg = awsConfig()
+                    def dbCfg = dbConfig()
+                    
+                    // Set environment variables from shared library
+                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    env.TF_VAR_environment = 'production'
+                    env.DB_URL = dbCfg.url
+                    env.DB_USERNAME = credentials('db-username')
+                    env.DB_PASSWORD = credentials('db-password')
+                    env.EUREKA_IP = '192.168.29.63'
+                    env.EUREKA_URL = "http://${env.EUREKA_IP}:8761/eureka/"
                     
                     echo "=========================================="
                     echo "Service1 CD Pipeline"
                     echo "=========================================="
-                    echo "Action: ${params.ACTION}"
-                    echo "Eureka IP: ${DEFAULT_EUREKA_IP}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "Environment: ${env.TF_VAR_environment}"
+                    echo "Eureka URL: ${env.EUREKA_URL}"
+                    echo "DB URL: ${env.DB_URL}"
                     echo "=========================================="
                 }
             }
@@ -53,41 +49,20 @@ pipeline {
             }
         }
 
-        stage('Get AMI ID') {
-            when { expression { params.ACTION == 'auto' } }
+        stage('Validate') {
             steps {
                 script {
-                    def amiId = null
+                    echo "=========================================="
+                    echo "Service1 CD Pipeline"
+                    echo "=========================================="
+                    echo "Action: ${params.ACTION}"
+                    echo "AMI ID: ${params.AMI_ID}"
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "=========================================="
                     
-                    // Try to get from CI stash first (when triggered by CI)
-                    try {
-                        unstash 'service1-ami'
-                        def amiProps = readFile('golden-ami.properties')
-                        amiId = amiProps.split('=')[1].trim()
-                        echo "✅ Retrieved AMI from CI: ${amiId}"
-                    } catch (Exception e) {
-                        echo "No AMI found in stash, will query AWS for latest"
+                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
+                        error "AMI_ID is required for apply action"
                     }
-                    
-                    // If not from CI, get latest from AWS
-                    if (!amiId) {
-                        amiId = sh(script: """
-                            aws ec2 describe-images \
-                                --region ${env.AWS_DEFAULT_REGION} \
-                                --owners self \
-                                --filters "Name=name,Values=myapp-service1-v*" \
-                                --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
-                                --output text
-                        """, returnStdout: true).trim()
-                        echo "✅ Found latest AMI from AWS: ${amiId}"
-                    }
-                    
-                    if (!amiId || amiId == '') {
-                        error "No AMI ID found! Please run service1-ci first or ensure an AMI exists."
-                    }
-                    
-                    env.AMI_ID = amiId
-                    echo "✅ Using AMI ID: ${env.AMI_ID}"
                 }
             }
         }
@@ -101,16 +76,16 @@ pipeline {
         }
 
         stage('Terraform Apply') {
-            when { expression { params.ACTION == 'auto' } }
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('service1/terraform') {
                     sh """
                         terraform apply -auto-approve \
-                            -var="ami_id=${env.AMI_ID}" \
+                            -var="ami_id=${params.AMI_ID}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="db_url=${env.DB_URL}" \
-                            -var="db_username=${DB_USERNAME}" \
-                            -var="db_password=${DB_PASSWORD}"
+                            -var="db_username=${env.DB_USERNAME}" \
+                            -var="db_password=${env.DB_PASSWORD}"
                     """
                 }
             }
@@ -126,7 +101,7 @@ pipeline {
         }
 
         stage('Output') {
-            when { expression { params.ACTION == 'auto' } }
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('service1/terraform') {
                     script {
@@ -136,14 +111,11 @@ pipeline {
                         echo "=========================================="
                         echo "✅ Service1 Deployed Successfully!"
                         echo "=========================================="
-                        echo "AMI ID: ${env.AMI_ID}"
+                        echo "AMI ID: ${params.AMI_ID}"
                         echo "Public IP: ${public_ip}"
                         echo "Private IP: ${private_ip}"
                         echo "API URL: http://${public_ip}:9001"
-                        echo "=========================================="
-                        echo ""
-                        echo "📋 Save this IP for orchestrator:"
-                        echo "  SERVICE1_IP=${private_ip}"
+                        echo "Health Check: http://${public_ip}:9001/actuator/health"
                         echo "=========================================="
                     }
                 }
