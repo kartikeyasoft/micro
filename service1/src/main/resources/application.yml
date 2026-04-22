@@ -1,20 +1,21 @@
+server:
+  port: ${SERVER_PORT:9001}
+
+spring:
+  application:
+    name: ${SPRING_APP_NAME:service1}
+  servlet:
+    multipart:
+      max-file-size: ${MAX_FILE_SIZE:5MB}
+      max-request-size: ${MAX_REQUEST_SIZE:5MB}
+
 eureka:
   client:
-    serviceUrl:
-      defaultZone: http://192.168.29.63:8761/eureka/
+    service-url:
+      defaultZone: ${EUREKA_URL:http://192.168.29.63:8761/eureka/}
+  instance:
+    prefer-ip-address: ${EUREKA_PREFER_IP:true}
 
-#
-#spring:
-#  web:
-#    cors:
-#      allowed-origins:
-#        - "*"
-#      allowed-methods:
-#        - GET
-#        - POST
-#        - PUT
-#        - DELETE
-#        - OPTIONS
-#      allowed-headers:
-#        - "*"
-#      allow-credentials: true
+logging:
+  level:
+    com.codingworld.service1: ${LOG_LEVEL:INFO}
