@@ -1,4 +1,4 @@
-package com.example.rabbitmqdemo.service;
+package com.ksapp.rabbitmqdemo.service;  // Changed package
 
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +33,7 @@ public class RabbitMQListener {
             );
             System.out.println("Send Message SUCCESS: " + response.getBody());
         } catch (Exception exception) {
-            System.err.println("Exception:::::!!!!! " + exception);
+            System.err.println("Exception: " + exception.getMessage());
         }
     }
 }
