@@ -1,4 +1,4 @@
-package com.ksapp.rabbitmqdemo.service;  // Changed package
+package com.ksapp.rabbitmqdemo.service;
 
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
