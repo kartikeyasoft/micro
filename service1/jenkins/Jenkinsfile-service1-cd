@@ -3,6 +3,10 @@
 pipeline {
     agent any
 
+    parameters {
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+    }
+
     environment {
         // AWS Credentials from Jenkins
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
@@ -36,6 +40,7 @@ pipeline {
                     echo "=========================================="
                     echo "Service1 CD Pipeline"
                     echo "=========================================="
+                    echo "Action: ${params.ACTION}"
                     echo "Eureka IP: ${DEFAULT_EUREKA_IP}"
                     echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
@@ -51,29 +56,44 @@ pipeline {
             }
         }
 
-        stage('Get AMI ID from CI') {
+        stage('Get Latest AMI') {
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
-                    // Try to get AMI ID from stash (if triggered by CI)
+                    // Try to get from CI stash first
+                    def amiFromStash = null
                     try {
                         unstash 'service1-ami'
                         def amiProps = readFile('golden-ami.properties')
-                        env.AMI_ID = amiProps.split('=')[1].trim()
-                        echo "✅ Retrieved AMI ID from CI: ${env.AMI_ID}"
+                        amiFromStash = amiProps.split('=')[1].trim()
+                        echo "✅ Found AMI from CI: ${amiFromStash}"
                     } catch (Exception e) {
-                        echo "⚠️ No AMI ID found in stash, will use default if available"
-                        // If running standalone, you can set a default AMI ID here
-                        // env.AMI_ID = 'ami-xxxxxxxxx'
+                        echo "No AMI found in stash, will query AWS for latest"
+                    }
+                    
+                    // If not from CI, get latest from AWS
+                    if (amiFromStash) {
+                        env.AMI_ID = amiFromStash
+                    } else {
+                        env.AMI_ID = sh(script: """
+                            aws ec2 describe-images \
+                                --owners self \
+                                --filters "Name=name,Values=myapp-service1-v*" \
+                                --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+                                --output text
+                        """, returnStdout: true).trim()
+                        echo "✅ Found latest AMI from AWS: ${env.AMI_ID}"
                     }
                 }
             }
         }
 
         stage('Validate') {
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
                     if (!env.AMI_ID || env.AMI_ID == '') {
-                        error "AMI_ID is required! Please run service1-ci first or set AMI_ID manually."
+                        error "No AMI ID found! Please run service1-ci first or ensure an AMI exists."
                     }
                     if (!(env.AMI_ID =~ /^ami-[a-f0-9]{17}$/)) {
                         error "Invalid AMI ID format: ${env.AMI_ID}"
@@ -92,6 +112,7 @@ pipeline {
         }
 
         stage('Terraform Apply') {
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('service1/terraform') {
                     sh """
@@ -106,7 +127,17 @@ pipeline {
             }
         }
 
+        stage('Terraform Destroy') {
+            when { expression { params.ACTION == 'destroy' } }
+            steps {
+                dir('service1/terraform') {
+                    sh 'terraform destroy -auto-approve'
+                }
+            }
+        }
+
         stage('Output') {
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('service1/terraform') {
                     script {
@@ -134,10 +165,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Service1 deployed successfully!"
+            echo "✅ Service1 ${params.ACTION} completed successfully!"
         }
         failure {
-            echo "❌ Service1 deployment failed!"
+            echo "❌ Service1 ${params.ACTION} failed!"
         }
     }
 }
