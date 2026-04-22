@@ -5,7 +5,6 @@ pipeline {
 
     parameters {
         string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID')
-        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka Server IP (from orchestrator)')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
@@ -17,6 +16,10 @@ pipeline {
         // Database credentials from Jenkins
         DB_USERNAME = credentials('db-username')
         DB_PASSWORD = credentials('db-password')
+        
+        // Default values (can be overridden if needed)
+        DEFAULT_EUREKA_IP = '192.168.29.63'
+        DEFAULT_DB_URL = 'jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC'
     }
 
     stages {
@@ -24,33 +27,21 @@ pipeline {
             steps {
                 script {
                     def awsCfg = awsConfig()
-                    def dbCfg = dbConfig()
-                    
-                    // Validate required parameters for apply action
-                    if (params.ACTION == 'apply') {
-                        if (!params.EUREKA_IP || params.EUREKA_IP == '') {
-                            error "EUREKA_IP parameter is required for apply action!"
-                        }
-                        if (!params.AMI_ID || params.AMI_ID == '') {
-                            error "AMI_ID parameter is required for apply action!"
-                        }
-                    }
                     
                     // Set environment variables
                     env.AWS_DEFAULT_REGION = awsCfg.region
-                    env.DB_URL = dbCfg.url
-                    env.EUREKA_URL = "http://${params.EUREKA_IP}:8761/eureka/"
+                    env.DB_URL = DEFAULT_DB_URL
+                    env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
                     
                     echo "=========================================="
                     echo "Service1 CD Pipeline"
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
-                    echo "Eureka IP: ${params.EUREKA_IP}"
+                    echo "Eureka IP: ${DEFAULT_EUREKA_IP}"
                     echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "DB URL: ${env.DB_URL}"
-                    echo "DB User: ${env.DB_USERNAME}"
                     echo "=========================================="
                 }
             }
@@ -59,6 +50,16 @@ pipeline {
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
+            }
+        }
+
+        stage('Validate') {
+            steps {
+                script {
+                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
+                        error "AMI_ID is required for apply action"
+                    }
+                }
             }
         }
 
@@ -79,8 +80,8 @@ pipeline {
                             -var="ami_id=${params.AMI_ID}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="db_url=${env.DB_URL}" \
-                            -var="db_username=${env.DB_USERNAME}" \
-                            -var="db_password=${env.DB_PASSWORD}"
+                            -var="db_username=${DB_USERNAME}" \
+                            -var="db_password=${DB_PASSWORD}"
                     """
                 }
             }

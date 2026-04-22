@@ -9,7 +9,7 @@ pipeline {
     }
 
     parameters {
-        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka Server IP (from orchestrator)')
+        string(name: 'EUREKA_IP', defaultValue: '', description: 'Eureka IP (auto-populated by orchestrator)')
     }
 
     environment {
@@ -26,6 +26,9 @@ pipeline {
         // Database credentials from Jenkins
         DB_USERNAME = credentials('db-username')
         DB_PASSWORD = credentials('db-password')
+        
+        // Default value (used when running standalone)
+        DEFAULT_EUREKA_IP = '192.168.29.63'
     }
 
     stages {
@@ -35,15 +38,14 @@ pipeline {
                     def envCfg = envConfig()
                     def dbCfg = dbConfig()
                     
-                    // Validate required parameter
-                    if (!params.EUREKA_IP || params.EUREKA_IP == '') {
-                        error "EUREKA_IP parameter is required! This must be passed from orchestrator."
-                    }
+                    // Use parameter if provided, otherwise use default
+                    def eurekaIp = params.EUREKA_IP ?: env.DEFAULT_EUREKA_IP
                     
-                    // Set environment variables from shared library
+                    // Set environment variables
                     env.NEXUS_URL = envCfg.nexus.url
                     env.AWS_DEFAULT_REGION = envCfg.aws.region
                     env.DB_URL = dbCfg.url
+                    env.EUREKA_IP = eurekaIp
                     
                     echo "=========================================="
                     echo "Service1 CI Pipeline"
@@ -52,7 +54,7 @@ pipeline {
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "DB URL: ${env.DB_URL}"
                     echo "Service: ${env.SERVICE_NAME}"
-                    echo "Eureka IP: ${params.EUREKA_IP}"
+                    echo "Eureka IP: ${env.EUREKA_IP} (${params.EUREKA_IP ? 'from orchestrator' : 'using default'})"
                     echo "=========================================="
                 }
             }
@@ -164,7 +166,6 @@ pipeline {
                     echo "=========================================="
                     echo "Version: ${env.SERVICE_VERSION}"
                     echo "AMI ID: ${env.AMI_ID}"
-                    echo "Eureka IP: ${params.EUREKA_IP}"
                     echo "=========================================="
                     
                     if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
@@ -173,7 +174,6 @@ pipeline {
                         build job: 'service1-cd',
                             parameters: [
                                 string(name: 'AMI_ID', value: env.AMI_ID),
-                                string(name: 'EUREKA_IP', value: params.EUREKA_IP),
                                 string(name: 'ACTION', value: 'apply')
                             ],
                             wait: false
