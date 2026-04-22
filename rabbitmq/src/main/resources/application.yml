@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: rabbitmq-service
+  
+server:
+  port: 8001
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://192.168.29.63:8761/eureka/
+    registry-fetch-interval-seconds: 5
+  
+  instance:
+    appname: ${spring.application.name}
+    instance-id: ${spring.application.name}:${server.port}
+    hostname: 192.168.29.66
+    prefer-ip-address: true
+    # Optional: Add metadata
+    metadata-map:
+      instance-type: rabbitmq
+      version: 1.0.0
