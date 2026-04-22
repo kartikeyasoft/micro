@@ -1,7 +1,7 @@
 package com.jwt_gateway.entity;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
-import jakarta.persistence.*;
+import javax.persistence.*;  // Change from jakarta.persistence to javax.persistence
 import lombok.Data;
 
 import java.util.HashSet;
@@ -23,11 +23,12 @@ public class UserData {
     private String email;
     private String phone;
     private boolean enabled = true;
-    private String profile = "default.png";  // Set default here
+    private String profile = "default.png";
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @JsonManagedReference
     private Set<UserRole> userRoles = new HashSet<>();
+
     public UserData() {
         this.profile = profile;
     }

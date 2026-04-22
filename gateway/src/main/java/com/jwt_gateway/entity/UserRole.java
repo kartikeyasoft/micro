@@ -2,7 +2,8 @@ package com.jwt_gateway.entity;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.persistence.*;
+import javax.persistence.*;  // Change from jakarta.persistence to javax.persistence
+
 @Entity
 public class UserRole {
 
@@ -13,15 +14,14 @@ public class UserRole {
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "user_id", referencedColumnName = "id")
-    @JsonBackReference // Avoid recursion during serialization
+    @JsonBackReference
     private UserData user;
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "role_id", referencedColumnName = "roleId") // Reference the roleId property in Role
-    @JsonProperty("role") // Include role details in the JSON output as 'role'
+    @JoinColumn(name = "role_id", referencedColumnName = "roleId")
+    @JsonProperty("role")
     private Role role;
 
-    // Getters and setters
     public Long getUserRoleId() {
         return userRoleId;
     }
