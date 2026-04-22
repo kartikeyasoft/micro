@@ -22,7 +22,7 @@ data "aws_ami" "redis" {
 
   filter {
     name   = "name"
-    values = ["myapp-redis-v*"]
+    values = ["myapp-redis-service-v*"]  # Fixed: matches your AMI name pattern
   }
 }
 
