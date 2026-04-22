@@ -69,20 +69,19 @@ pipeline {
             }
         }
 
-        stage('Deploy to Nexus') {
-            steps {
-                dir('rabbitmq') {
-                    script {
-                        def jarFile = "target/rabbitmqdemo-${env.SERVICE_VERSION}.jar"
-                        def nexusPath = "${env.NEXUS_URL}/com/example/rabbitmqdemo/${env.SERVICE_VERSION}/rabbitmqdemo-${env.SERVICE_VERSION}.jar"
-                        sh """
-                            curl -f -u ${env.NEXUS_CREDS} --upload-file ${jarFile} ${nexusPath}
-                        """
-                    }
-                }
+stage('Deploy to Nexus') {
+    steps {
+        dir('rabbitmq') {
+            script {
+                def jarFile = "target/rabbitmq-backend-${env.SERVICE_VERSION}.jar"  // Updated name
+                def nexusPath = "${env.NEXUS_URL}/com/ksapp/rabbitmq-backend/${env.SERVICE_VERSION}/rabbitmq-backend-${env.SERVICE_VERSION}.jar"  // Updated path
+                sh """
+                    curl -f -u ${env.NEXUS_CREDS} --upload-file ${jarFile} ${nexusPath}
+                """
             }
         }
-
+    }
+}
         stage('Bake Golden Image') {
             steps {
                 script {
