@@ -1,6 +1,5 @@
 package com.jwt_gateway.config;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -11,7 +10,7 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 @Configuration
 public class CorsConfig {
 
-    @Value("${cors.allowed.origins:http://localhost}")
+    @Value("${cors.allowed.origins:*}")
     private String allowedOrigins;
 
     @Bean
@@ -28,7 +27,7 @@ public class CorsConfig {
         corsConfig.addAllowedOrigin(allowedOrigins);
         corsConfig.addAllowedHeader("*");
         corsConfig.addAllowedMethod("*");
-        corsConfig.setAllowCredentials(true);
+        corsConfig.setAllowCredentials(false);  // Must be false with "*"
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfig);

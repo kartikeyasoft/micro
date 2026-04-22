@@ -1,21 +1,20 @@
 server:
-  port: ${SERVER_PORT:9001}
+  port: 9001
 
 spring:
   application:
-    name: ${SPRING_APP_NAME:service1}
-  servlet:
-    multipart:
-      max-file-size: ${MAX_FILE_SIZE:5MB}
-      max-request-size: ${MAX_REQUEST_SIZE:5MB}
+    name: service1  # ← Critical! Must match Gateway's lb://service1
 
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://192.168.29.63:8761/eureka/}
   instance:
-    prefer-ip-address: ${EUREKA_PREFER_IP:true}
+    prefer-ip-address: true
+    instance-id: ${spring.cloud.client.ip-address}:${server.port}
 
-logging:
-  level:
-    com.codingworld.service1: ${LOG_LEVEL:INFO}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

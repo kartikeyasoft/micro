@@ -8,14 +8,24 @@ pipeline {
         jdk 'JDK-17'
     }
 
-    environment {
+        environment {
         PATH = "/usr/bin:${env.PATH}"
-        NEXUS_URL = 'http://172.21.12.151:8081/repository/maven-releases'
+        
+        // Load configurations from shared library
+        NEXUS_CFG = nexusConfig()
+        AWS_CFG = awsConfig()
+        
+        // Nexus Configuration (URL from shared lib, credentials from Jenkins)
+        NEXUS_URL = NEXUS_CFG.url
         NEXUS_CREDS = credentials('nexus-creds')
+        
+        // Service Configuration
         SERVICE_NAME = 'eureka'
+        
+        // AWS Configuration (region from shared lib, keys from Jenkins credentials)
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        AWS_DEFAULT_REGION = 'us-east-1'
+        AWS_DEFAULT_REGION = AWS_CFG.region
     }
 
     stages {
