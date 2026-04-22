@@ -1,3 +1,5 @@
+@Library('jenkins-shared-lib-deno@main') _
+
 pipeline {
     agent any
 
@@ -34,10 +36,35 @@ pipeline {
             }
         }
 
+        stage('Maven Compile') {
+            steps {
+                dir('redis') {
+                    sh 'mvn clean compile -Dmaven.test.skip=true'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                dir('redis') {
+                    withSonarQubeEnv('sonar') {
+                        sh """
+                            mvn sonar:sonar \
+                                -Dsonar.projectKey=com.ksapp:redis-service \
+                                -Dsonar.projectName="Redis_Service_v${env.SERVICE_VERSION}" \
+                                -Dsonar.projectVersion=${env.SERVICE_VERSION} \
+                                -Dsonar.sources=src/main/java \
+                                -Dsonar.java.binaries=target/classes
+                        """
+                    }
+                }
+            }
+        }
+
         stage('Maven Package') {
             steps {
                 dir('redis') {
-                    sh 'mvn clean package -Dmaven.test.skip=true'
+                    sh 'mvn package -Dmaven.test.skip=true'
                 }
             }
         }
@@ -79,6 +106,7 @@ pipeline {
                             '''
                             
                             script {
+                                // Read the AMI ID from the file
                                 def amiProps = readFile('golden-ami.properties')
                                 env.AMI_ID = amiProps.split('=')[1].trim()
                                 echo "✅ Captured AMI ID: ${env.AMI_ID}"
@@ -94,18 +122,28 @@ pipeline {
             steps {
                 script {
                     echo "=========================================="
-                    echo "AMI ID: ${env.AMI_ID}"
+                    echo "Triggering CD Pipeline"
+                    echo "=========================================="
                     echo "Version: ${env.SERVICE_VERSION}"
+                    echo "AMI ID: ${env.AMI_ID}"
                     echo "=========================================="
                     
-                    if (env.AMI_ID && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+                    // Check if AMI_ID is valid
+                    if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+                        echo "✅ Valid AMI ID, triggering CD pipeline..."
+                        
                         build job: 'redis-cd',
                             parameters: [
                                 string(name: 'AMI_ID', value: env.AMI_ID),
                                 string(name: 'ACTION', value: 'apply')
                             ],
                             wait: false
-                        echo "✅ CD pipeline triggered!"
+                        
+                        echo "✅ CD pipeline triggered successfully!"
+                    } else {
+                        echo "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
+                        echo "CD pipeline will not be triggered"
+                        error "Failed to capture valid AMI ID"
                     }
                 }
             }
@@ -114,7 +152,7 @@ pipeline {
 
     post {
         success {
-            echo "🎉 Redis CI completed! AMI: ${env.AMI_ID}"
+            echo "🎉 Redis CI completed successfully! AMI: ${env.AMI_ID}"
         }
         failure {
             echo "❌ Redis CI failed!"
