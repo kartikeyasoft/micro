@@ -1,13 +1,11 @@
-package com.codingworld.service1;
+package com.ksapp.service1;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootTest
-class Service1ApplicationTests {
-
-	@Test
-	void contextLoads() {
-	}
-
+@SpringBootApplication
+public class Service2Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Service2Application.class, args);
+    }
 }
