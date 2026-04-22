@@ -25,6 +25,9 @@ pipeline {
         
         // Eureka IP (can be overridden by passing environment variable)
         EUREKA_IP = '192.168.29.63'
+        
+        // Increment version to avoid duplicate AMI names
+        BUILD_TIMESTAMP = sh(script: "date +%Y%m%d%H%M%S", returnStdout: true).trim()
     }
 
     stages {
@@ -44,9 +47,9 @@ pipeline {
                     echo "=========================================="
                     echo "Nexus URL: ${env.NEXUS_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "DB URL: ${env.DB_URL}"
                     echo "Service: ${env.SERVICE_NAME}"
                     echo "Eureka IP: ${env.EUREKA_IP}"
+                    echo "Build Timestamp: ${BUILD_TIMESTAMP}"
                     echo "=========================================="
                 }
             }
@@ -62,7 +65,9 @@ pipeline {
             steps {
                 dir('service1') {
                     script {
-                        env.SERVICE_VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
+                        def pomVersion = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
+                        // Use timestamp to make AMI name unique
+                        env.SERVICE_VERSION = "${pomVersion}-${BUILD_TIMESTAMP}"
                         echo "Building version: ${env.SERVICE_VERSION}"
                     }
                 }
@@ -106,7 +111,7 @@ pipeline {
             steps {
                 dir('service1') {
                     script {
-                        def jarFile = "target/service1-${env.SERVICE_VERSION}.jar"
+                        def jarFile = "target/service1-1.0.0.jar"
                         def nexusPath = "${env.NEXUS_URL}/com/ksapp/service1/${env.SERVICE_VERSION}/service1-${env.SERVICE_VERSION}.jar"
                         sh """
                             curl -v -u ${env.NEXUS_CREDS} --upload-file ${jarFile} ${nexusPath}
@@ -133,9 +138,15 @@ pipeline {
                                     -var "nexus_url=${NEXUS_URL}" \
                                     service1.pkr.hcl 2>&1 | tee build-output.txt
                                 
-                                AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
-                                echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
-                                echo "Successfully created AMI: $AMI_ID"
+                                # Check if packer build succeeded
+                                if grep -q "Build 'amazon-ebs.service1' finished" build-output.txt; then
+                                    AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
+                                    echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
+                                    echo "Successfully created AMI: $AMI_ID"
+                                else
+                                    echo "Packer build failed"
+                                    exit 1
+                                fi
                             '''
                             
                             script {
