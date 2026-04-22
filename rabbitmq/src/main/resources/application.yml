@@ -1,22 +1,23 @@
-spring:
-  application:
-    name: rabbitmq-service
-  
 server:
   port: 8001
 
+spring:
+  application:
+    name: rabbitmq-backend
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+redis:
+  service:
+    url: ${REDIS_SERVICE_URL:http://localhost:1222/redis}
+
 eureka:
+  instance:
+    hostname: ${EUREKA_HOST:localhost}
+    prefer-ip-address: true
   client:
     service-url:
-      defaultZone: http://192.168.29.63:8761/eureka/
-    registry-fetch-interval-seconds: 5
-  
-  instance:
-    appname: ${spring.application.name}
-    instance-id: ${spring.application.name}:${server.port}
-    hostname: 192.168.29.66
-    prefer-ip-address: true
-    # Optional: Add metadata
-    metadata-map:
-      instance-type: rabbitmq
-      version: 1.0.0
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
