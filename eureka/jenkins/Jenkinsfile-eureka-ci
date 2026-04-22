@@ -1,4 +1,5 @@
 @Library('jenkins-shared-lib-deno@main') _
+
 pipeline {
     agent any
 
@@ -9,7 +10,7 @@ pipeline {
 
     environment {
         PATH = "/usr/bin:${env.PATH}"
-        NEXUS_URL = 'http://172.21.12.151:8081/repository/maven-releases/'
+        NEXUS_URL = 'http://http://172.21.12.151:8081/repository/maven-releases'
         NEXUS_CREDS = credentials('nexus-creds')
         SERVICE_NAME = 'eureka'
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
@@ -50,7 +51,7 @@ pipeline {
                         sh """
                             mvn sonar:sonar \
                                 -Dsonar.projectKey=com.ksapp:eureka \
-                                -Dsonar.projectName="eureka_${env.SERVICE_VERSION}" \
+                                -Dsonar.projectName="Eureka_Service_Registry_v${env.SERVICE_VERSION}" \
                                 -Dsonar.projectVersion=${env.SERVICE_VERSION} \
                                 -Dsonar.sources=src/main/java \
                                 -Dsonar.java.binaries=target/classes
@@ -81,6 +82,7 @@ pipeline {
                 }
             }
         }
+
         stage('Bake Golden Image') {
             steps {
                 script {
@@ -104,7 +106,7 @@ pipeline {
                             '''
                             
                             script {
-                                // Read from current directory (eureka/packer)
+                                // Read the AMI ID from the file
                                 def amiProps = readFile('golden-ami.properties')
                                 env.AMI_ID = amiProps.split('=')[1].trim()
                                 echo "✅ Captured AMI ID: ${env.AMI_ID}"
@@ -120,11 +122,14 @@ pipeline {
             steps {
                 script {
                     echo "=========================================="
-                    echo "AMI ID: ${env.AMI_ID}"
+                    echo "Triggering CD Pipeline"
+                    echo "=========================================="
                     echo "Version: ${env.SERVICE_VERSION}"
+                    echo "AMI ID: ${env.AMI_ID}"
                     echo "=========================================="
                     
-                    if (env.AMI_ID && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+                    // Check if AMI_ID is valid
+                    if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
                         echo "✅ Valid AMI ID, triggering CD pipeline..."
                         
                         build job: 'eureka-cd',
@@ -136,12 +141,13 @@ pipeline {
                         
                         echo "✅ CD pipeline triggered successfully!"
                     } else {
-                        echo "⚠️ Invalid AMI ID format: ${env.AMI_ID}"
+                        echo "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
+                        echo "CD pipeline will not be triggered"
+                        error "Failed to capture valid AMI ID"
                     }
                 }
             }
         }
-
     }
 
     post {
