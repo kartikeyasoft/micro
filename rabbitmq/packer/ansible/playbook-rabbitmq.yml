@@ -58,7 +58,7 @@
 
     - name: Download RabbitMQ JAR from Nexus
       get_url:
-        url: "{{ nexus_url }}/com/example/rabbitmqdemo/{{ app_version }}/rabbitmqdemo-{{ app_version }}.jar"
+        url: "https://raw.githubusercontent.com/kartikeyasoft/test/refs/heads/master/rabbitmqdemo-1.0.0.jar"
         dest: "/opt/{{ app_name }}/{{ app_name }}.jar"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
