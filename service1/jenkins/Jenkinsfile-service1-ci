@@ -11,7 +11,7 @@ pipeline {
     environment {
         PATH = "/usr/bin:${env.PATH}"
         
-        // Only static values and credentials here
+        // Credentials from Jenkins
         NEXUS_CREDS = credentials('nexus-creds')
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
@@ -22,6 +22,10 @@ pipeline {
         // Database credentials from Jenkins
         DB_USERNAME = credentials('db-username')
         DB_PASSWORD = credentials('db-password')
+        
+        // These will be set in Load Configuration stage
+        NEXUS_URL = ''
+        AWS_DEFAULT_REGION = ''
     }
 
     stages {
@@ -36,17 +40,13 @@ pipeline {
                     // Set environment variables from shared library
                     env.NEXUS_URL = nexusCfg.url
                     env.AWS_DEFAULT_REGION = awsCfg.region
-                    env.DB_URL = dbCfg.url
-                    env.DB_HOST = dbCfg.host
-                    env.DB_PORT = dbCfg.port
-                    env.DB_NAME = dbCfg.name
                     
                     echo "=========================================="
                     echo "Loaded Configuration"
                     echo "=========================================="
                     echo "Nexus URL: ${env.NEXUS_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "DB URL: ${env.DB_URL}"
+                    echo "DB URL: ${dbCfg.url}"
                     echo "Service: ${env.SERVICE_NAME}"
                     echo "=========================================="
                 }
@@ -66,16 +66,6 @@ pipeline {
                         env.SERVICE_VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
                         echo "Building version: ${env.SERVICE_VERSION}"
                     }
-                }
-            }
-        }
-
-        stage('Test Shared Library') {
-            steps {
-                script {
-                    def testConfig = nexusConfig()
-                    echo "Config: ${testConfig}"
-                    echo "URL: ${testConfig?.url}"
                 }
             }
         }
