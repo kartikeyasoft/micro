@@ -1,4 +1,4 @@
-package com.ksapp.rabbitmqdemo.config;  // Changed package
+package com.ksapp.rabbitmqdemo.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
