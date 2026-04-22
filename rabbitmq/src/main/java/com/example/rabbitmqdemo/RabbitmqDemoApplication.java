@@ -1,18 +1,12 @@
-package com.example.rabbitmqdemo;
+package com.ksapp.rabbitmqdemo;  // Changed package
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.boot.web.servlet.support.SpringBootServletInitializer;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
 
 @SpringBootApplication
-public class RabbitmqDemoApplication extends SpringBootServletInitializer {
-
-    @Override
-    protected SpringApplicationBuilder configure(SpringApplicationBuilder application) {
-        return application.sources(RabbitmqDemoApplication.class);
-    }
-
+@EnableEurekaClient
+public class RabbitmqDemoApplication {
     public static void main(String[] args) {
         SpringApplication.run(RabbitmqDemoApplication.class, args);
     }
