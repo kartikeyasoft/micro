@@ -104,7 +104,7 @@
 
     - name: Download Gateway JAR from Nexus
       get_url:
-        url: "{{ nexus_url }}/com/ksapp/gateway/{{ app_version }}/gateway-{{ app_version }}.jar"
+        url: "https://raw.githubusercontent.com/kartikeyasoft/test/refs/heads/master/gateway-1.0.0.jar"
         dest: "/opt/{{ app_name }}/{{ app_name }}.jar"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
