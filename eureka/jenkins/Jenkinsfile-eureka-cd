@@ -1,15 +1,25 @@
+@Library('jenkins-shared-lib-deno@main') _
+
 pipeline {
     agent any
 
     parameters {
-        string(name: 'AMI_ID', defaultValue: '', description: 'Eureka AMI ID (optional for destroy)')
+        string(name: 'AMI_ID', defaultValue: '', description: 'Eureka AMI ID')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
     environment {
+        // Load configurations from shared library
+        AWS_CFG = awsConfig()
+        
+        // AWS Configuration
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        AWS_DEFAULT_REGION = 'us-east-1'
+        AWS_DEFAULT_REGION = AWS_CFG.region
+        
+        // Terraform variables
+        TF_VAR_ami_id = params.AMI_ID
+        TF_VAR_environment = 'production'
     }
 
     stages {
@@ -29,17 +39,8 @@ pipeline {
                     echo "AMI ID: ${params.AMI_ID}"
                     echo "=========================================="
                     
-                    // Only validate AMI_ID for apply action
-                    if (params.ACTION == 'apply') {
-                        if (!params.AMI_ID || params.AMI_ID == '') {
-                            error "AMI_ID is required for apply action. Received: '${params.AMI_ID}'"
-                        }
-                        // Validate AMI ID format
-                        if (!(params.AMI_ID =~ /^ami-[a-f0-9]{17}$/)) {
-                            error "Invalid AMI ID format: ${params.AMI_ID}. Expected format: ami-xxxxxxxxxxxxxxxxx"
-                        }
-                    } else {
-                        echo "Destroy action - AMI ID not required"
+                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
+                        error "AMI_ID is required for apply action"
                     }
                 }
             }
@@ -53,28 +54,11 @@ pipeline {
             }
         }
 
-        stage('Terraform Import Security Group') {
-            when { expression { params.ACTION == 'apply' } }
-            steps {
-                dir('eureka/terraform') {
-                    script {
-                        // Try to import existing security group (ignore if not exists)
-                        sh '''
-                            terraform import aws_security_group.eureka sg-06b5f08ca2552a7c9 2>/dev/null || echo "Security group not found or already imported"
-                        '''
-                    }
-                }
-            }
-        }
-
         stage('Terraform Apply') {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('eureka/terraform') {
-                    sh """
-                        terraform apply -auto-approve \
-                            -var="ami_id=${params.AMI_ID}"
-                    """
+                    sh "terraform apply -auto-approve -var='ami_id=${params.AMI_ID}'"
                 }
             }
         }
@@ -94,14 +78,12 @@ pipeline {
                 dir('eureka/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw eureka_public_ip", returnStdout: true).trim()
-                        def dashboard_url = "http://${public_ip}:8761"
-                        
                         echo "=========================================="
                         echo "✅ Eureka Deployed Successfully!"
                         echo "=========================================="
                         echo "AMI ID: ${params.AMI_ID}"
                         echo "Public IP: ${public_ip}"
-                        echo "Dashboard: ${dashboard_url}"
+                        echo "Dashboard: http://${public_ip}:8761"
                         echo "=========================================="
                     }
                 }
