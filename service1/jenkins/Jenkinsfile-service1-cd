@@ -4,8 +4,8 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID')
-        string(name: 'ACTION', defaultValue: 'apply', description: 'Terraform action (apply or destroy)')
+        string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID (required for apply)')
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
     environment {
@@ -16,30 +16,31 @@ pipeline {
         // Database credentials from Jenkins
         DB_USERNAME = credentials('db-username')
         DB_PASSWORD = credentials('db-password')
+        
+        // Default values
+        DEFAULT_AWS_REGION = 'us-east-1'
+        DEFAULT_EUREKA_IP = '192.168.29.63'
+        DEFAULT_DB_URL = 'jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC'
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
-                    def awsCfg = awsConfig()
-                    def dbCfg = dbConfig()
-                    
-                    // Set environment variables
-                    env.AWS_DEFAULT_REGION = awsCfg.region
-                    env.TF_VAR_environment = 'production'
-                    env.DB_URL = dbCfg.url
-                    env.EUREKA_IP = '192.168.29.63'
-                    env.EUREKA_URL = "http://${env.EUREKA_IP}:8761/eureka/"
+                    // Set AWS region
+                    env.AWS_DEFAULT_REGION = DEFAULT_AWS_REGION
+                    env.DB_URL = DEFAULT_DB_URL
+                    env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
                     
                     echo "=========================================="
                     echo "Service1 CD Pipeline"
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
-                    echo "AMI ID: ${params.AMI_ID}"
+                    if (params.ACTION == 'apply') {
+                        echo "AMI ID: ${params.AMI_ID}"
+                    }
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "Eureka URL: ${env.EUREKA_URL}"
-                    echo "DB URL: ${env.DB_URL}"
                     echo "=========================================="
                 }
             }
@@ -51,14 +52,55 @@ pipeline {
             }
         }
 
+        stage('Get AMI ID') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                script {
+                    def amiId = params.AMI_ID
+                    
+                    if (!amiId || amiId == '') {
+                        try {
+                            unstash 'service1-ami'
+                            def amiProps = readFile('golden-ami.properties')
+                            amiId = amiProps.split('=')[1].trim()
+                            echo "✅ Retrieved AMI from CI: ${amiId}"
+                        } catch (Exception e) {
+                            echo "No AMI found in stash"
+                        }
+                    }
+                    
+                    if (!amiId || amiId == '') {
+                        amiId = sh(script: """
+                            aws ec2 describe-images \
+                                --region ${env.AWS_DEFAULT_REGION} \
+                                --owners self \
+                                --filters "Name=name,Values=myapp-service1-v*" \
+                                --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+                                --output text
+                        """, returnStdout: true).trim()
+                        echo "✅ Found latest AMI from AWS: ${amiId}"
+                    }
+                    
+                    if (!amiId || amiId == '') {
+                        error "No AMI ID found! Please run service1-ci first or provide AMI_ID parameter."
+                    }
+                    
+                    env.AMI_ID = amiId
+                    echo "✅ Using AMI ID: ${env.AMI_ID}"
+                }
+            }
+        }
+
         stage('Validate') {
             steps {
                 script {
-                    if (params.ACTION == 'apply' && (!params.AMI_ID || params.AMI_ID == '')) {
-                        error "AMI_ID is required for apply action"
-                    }
-                    if (params.ACTION != 'apply' && params.ACTION != 'destroy') {
-                        error "ACTION must be either 'apply' or 'destroy'"
+                    if (params.ACTION == 'apply') {
+                        if (!env.AMI_ID || env.AMI_ID == '') {
+                            error "AMI_ID is required for apply action"
+                        }
+                        echo "✅ Validation passed for apply"
+                    } else {
+                        echo "✅ Destroy action - no validation needed"
                     }
                 }
             }
@@ -78,7 +120,8 @@ pipeline {
                 dir('service1/terraform') {
                     sh """
                         terraform apply -auto-approve \
-                            -var="ami_id=${params.AMI_ID}" \
+                            -var="ami_id=${env.AMI_ID}" \
+                            -var="aws_region=${env.AWS_DEFAULT_REGION}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="db_url=${env.DB_URL}" \
                             -var="db_username=${DB_USERNAME}" \
@@ -103,14 +146,12 @@ pipeline {
                 dir('service1/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw service1_public_ip", returnStdout: true).trim()
-                        def private_ip = sh(script: "terraform output -raw service1_private_ip", returnStdout: true).trim()
                         
                         echo "=========================================="
                         echo "✅ Service1 Deployed Successfully!"
                         echo "=========================================="
-                        echo "AMI ID: ${params.AMI_ID}"
+                        echo "AMI ID: ${env.AMI_ID}"
                         echo "Public IP: ${public_ip}"
-                        echo "Private IP: ${private_ip}"
                         echo "API URL: http://${public_ip}:9001"
                         echo "=========================================="
                     }
