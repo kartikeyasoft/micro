@@ -3,315 +3,210 @@ pipeline {
 
     parameters {
         choice(name: 'ACTION', 
-               choices: ['full-deploy', 'smart-deploy', 'full-destroy'], 
-               description: 'What to do? (smart-deploy = only changed services)')
+               choices: ['full-deploy', 'full-destroy'], 
+               description: 'What to do?')
         
         choice(name: 'ENVIRONMENT', 
                choices: ['dev', 'staging', 'production'], 
                description: 'Target environment')
     }
 
+    environment {
+        AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_DEFAULT_REGION = 'us-east-1'
+    }
+
     stages {
         // ============================================
-        // STAGE 1: Detect Changed Services
+        // STAGE 1: Build All Services
         // ============================================
-        stage('Detect Changes') {
-            when { expression { params.ACTION == 'smart-deploy' } }
-            steps {
-                script {
-                    // Get changed files in this commit
-                    def changedFiles = sh(script: """
-                        git diff --name-only HEAD~1 HEAD 2>/dev/null || echo ""
-                    """, returnStdout: true).trim()
-                    
-                    echo "Changed files: ${changedFiles}"
-                    
-                    // Detect which services changed
-                    env.BUILD_EUREKA = changedFiles.contains('eureka/') ? 'true' : 'false'
-                    env.BUILD_SERVICE1 = changedFiles.contains('service1/') ? 'true' : 'false'
-                    env.BUILD_SERVICE2 = changedFiles.contains('service2/') ? 'true' : 'false'
-                    env.BUILD_GATEWAY = changedFiles.contains('gateway/') ? 'true' : 'false'
-                    env.BUILD_REDIS = changedFiles.contains('redis/') ? 'true' : 'false'
-                    env.BUILD_RABBITMQ = changedFiles.contains('rabbitmq/') ? 'true' : 'false'
-                    
-                    // If shared files changed (pom.xml, shared lib), build all
-                    if (changedFiles.contains('pom.xml') || changedFiles.contains('jenkins-shared-lib-deno/')) {
-                        env.BUILD_EUREKA = 'true'
-                        env.BUILD_SERVICE1 = 'true'
-                        env.BUILD_SERVICE2 = 'true'
-                        env.BUILD_GATEWAY = 'true'
-                        env.BUILD_REDIS = 'true'
-                        env.BUILD_RABBITMQ = 'true'
-                        echo "Shared files changed. Building all services."
+        stage('Build All Services') {
+            when { expression { params.ACTION == 'full-deploy' } }
+            parallel {
+                stage('Build Eureka') {
+                    steps {
+                        build job: 'eureka-ci', wait: true
                     }
-                    
-                    echo "=========================================="
-                    echo "Services to build:"
-                    echo "  Eureka:   ${env.BUILD_EUREKA == 'true' ? '✅' : '❌'}"
-                    echo "  Service1: ${env.BUILD_SERVICE1 == 'true' ? '✅' : '❌'}"
-                    echo "  Service2: ${env.BUILD_SERVICE2 == 'true' ? '✅' : '❌'}"
-                    echo "  Gateway:  ${env.BUILD_GATEWAY == 'true' ? '✅' : '❌'}"
-                    echo "  Redis:    ${env.BUILD_REDIS == 'true' ? '✅' : '❌'}"
-                    echo "  RabbitMQ: ${env.BUILD_RABBITMQ == 'true' ? '✅' : '❌'}"
-                    echo "=========================================="
                 }
-            }
-        }
-
-        // ============================================
-        // STAGE 2: Build Only Changed Services
-        // ============================================
-        stage('Build Services') {
-            when { expression { params.ACTION == 'smart-deploy' || params.ACTION == 'full-deploy' } }
-            steps {
-                script {
-                    def parallelStages = [:]
-                    
-                    // For full-deploy, build everything
-                    def buildEureka = (params.ACTION == 'full-deploy') || (env.BUILD_EUREKA == 'true')
-                    def buildService1 = (params.ACTION == 'full-deploy') || (env.BUILD_SERVICE1 == 'true')
-                    def buildService2 = (params.ACTION == 'full-deploy') || (env.BUILD_SERVICE2 == 'true')
-                    def buildGateway = (params.ACTION == 'full-deploy') || (env.BUILD_GATEWAY == 'true')
-                    def buildRedis = (params.ACTION == 'full-deploy') || (env.BUILD_REDIS == 'true')
-                    def buildRabbitMQ = (params.ACTION == 'full-deploy') || (env.BUILD_RABBITMQ == 'true')
-                    
-                    if (buildEureka) parallelStages['Build Eureka'] = { build job: 'eureka-ci', wait: true }
-                    if (buildService1) parallelStages['Build Service1'] = { build job: 'service1-ci', wait: true }
-                    if (buildService2) parallelStages['Build Service2'] = { build job: 'service2-ci', wait: true }
-                    if (buildGateway) parallelStages['Build Gateway'] = { build job: 'gateway-ci', wait: true }
-                    if (buildRedis) parallelStages['Build Redis'] = { build job: 'redis-ci', wait: true }
-                    if (buildRabbitMQ) parallelStages['Build RabbitMQ'] = { build job: 'rabbitmq-ci', wait: true }
-                    
-                    if (parallelStages.size() == 0) {
-                        echo "⚠️ No services changed. Skipping build."
-                    } else {
-                        echo "🚀 Building ${parallelStages.size()} service(s)..."
-                        parallel parallelStages
+                stage('Build Service1') {
+                    steps {
+                        build job: 'service1-ci', wait: true
+                    }
+                }
+                stage('Build Service2') {
+                    steps {
+                        build job: 'service2-ci', wait: true
+                    }
+                }
+                stage('Build Gateway') {
+                    steps {
+                        build job: 'gateway-ci', wait: true
+                    }
+                }
+                stage('Build Redis') {
+                    steps {
+                        build job: 'redis-ci', wait: true
+                    }
+                }
+                stage('Build RabbitMQ') {
+                    steps {
+                        build job: 'rabbitmq-ci', wait: true
                     }
                 }
             }
         }
 
         // ============================================
-        // STAGE 3: Deploy Eureka (if changed or full-deploy)
+        // STAGE 2: Deploy Eureka
         // ============================================
         stage('Deploy Eureka') {
-            when { 
-                expression { 
-                    (params.ACTION == 'full-deploy') || 
-                    (params.ACTION == 'smart-deploy' && env.BUILD_EUREKA == 'true')
-                } 
-            }
+            when { expression { params.ACTION == 'full-deploy' } }
             steps {
                 build job: 'eureka-cd', 
-                    parameters: [string(name: 'ACTION', value: 'apply')],
+                    parameters: [
+                        string(name: 'ACTION', value: 'apply'),
+                        string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
+                    ],
                     wait: true
-                
-                script {
-                    dir('eureka/terraform') {
-                        env.EUREKA_IP = sh(script: "terraform output -raw eureka_private_ip", returnStdout: true).trim()
-                        echo "✅ Eureka IP: ${env.EUREKA_IP}"
-                    }
-                }
             }
         }
 
         // ============================================
-        // STAGE 4: Deploy Redis (if changed or full-deploy)
+        // STAGE 3: Deploy Redis
         // ============================================
         stage('Deploy Redis') {
-            when { 
-                expression { 
-                    (params.ACTION == 'full-deploy') || 
-                    (params.ACTION == 'smart-deploy' && env.BUILD_REDIS == 'true')
-                } 
-            }
+            when { expression { params.ACTION == 'full-deploy' } }
             steps {
                 build job: 'redis-cd',
                     parameters: [
                         string(name: 'ACTION', value: 'apply'),
-                        string(name: 'EUREKA_IP', value: env.EUREKA_IP)
+                        string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
                     ],
                     wait: true
-                
-                script {
-                    dir('redis/terraform') {
-                        env.REDIS_IP = sh(script: "terraform output -raw redis_private_ip", returnStdout: true).trim()
-                        echo "✅ Redis IP: ${env.REDIS_IP}"
-                    }
-                }
             }
         }
 
         // ============================================
-        // STAGE 5: Deploy Service1 & Service2 (Parallel)
+        // STAGE 4: Deploy Service1 & Service2
         // ============================================
         stage('Deploy Service1 & Service2') {
-            when { 
-                expression { 
-                    (params.ACTION == 'full-deploy') || 
-                    (params.ACTION == 'smart-deploy' && (env.BUILD_SERVICE1 == 'true' || env.BUILD_SERVICE2 == 'true'))
-                } 
-            }
+            when { expression { params.ACTION == 'full-deploy' } }
             parallel {
                 stage('Deploy Service1') {
-                    when { 
-                        expression { 
-                            (params.ACTION == 'full-deploy') || 
-                            (params.ACTION == 'smart-deploy' && env.BUILD_SERVICE1 == 'true')
-                        } 
-                    }
                     steps {
                         build job: 'service1-cd',
                             parameters: [
                                 string(name: 'ACTION', value: 'apply'),
-                                string(name: 'EUREKA_IP', value: env.EUREKA_IP)
+                                string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
                             ],
                             wait: true
-                        
-                        script {
-                            dir('service1/terraform') {
-                                env.SERVICE1_IP = sh(script: "terraform output -raw service1_private_ip", returnStdout: true).trim()
-                                echo "✅ Service1 IP: ${env.SERVICE1_IP}"
-                            }
-                        }
                     }
                 }
-                
                 stage('Deploy Service2') {
-                    when { 
-                        expression { 
-                            (params.ACTION == 'full-deploy') || 
-                            (params.ACTION == 'smart-deploy' && env.BUILD_SERVICE2 == 'true')
-                        } 
-                    }
                     steps {
                         build job: 'service2-cd',
                             parameters: [
                                 string(name: 'ACTION', value: 'apply'),
-                                string(name: 'EUREKA_IP', value: env.EUREKA_IP)
+                                string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
                             ],
                             wait: true
-                        
-                        script {
-                            dir('service2/terraform') {
-                                env.SERVICE2_IP = sh(script: "terraform output -raw service2_private_ip", returnStdout: true).trim()
-                                echo "✅ Service2 IP: ${env.SERVICE2_IP}"
-                            }
-                        }
                     }
                 }
             }
         }
 
         // ============================================
-        // STAGE 6: Deploy RabbitMQ (if changed or full-deploy)
+        // STAGE 5: Deploy RabbitMQ
         // ============================================
         stage('Deploy RabbitMQ') {
-            when { 
-                expression { 
-                    (params.ACTION == 'full-deploy') || 
-                    (params.ACTION == 'smart-deploy' && env.BUILD_RABBITMQ == 'true')
-                } 
-            }
+            when { expression { params.ACTION == 'full-deploy' } }
             steps {
                 build job: 'rabbitmq-cd',
                     parameters: [
                         string(name: 'ACTION', value: 'apply'),
-                        string(name: 'EUREKA_IP', value: env.EUREKA_IP),
-                        string(name: 'REDIS_IP', value: env.REDIS_IP)
+                        string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
                     ],
                     wait: true
-                
-                script {
-                    dir('rabbitmq/terraform') {
-                        env.RABBITMQ_IP = sh(script: "terraform output -raw rabbitmq_private_ip", returnStdout: true).trim()
-                        echo "✅ RabbitMQ IP: ${env.RABBITMQ_IP}"
-                    }
-                }
             }
         }
 
         // ============================================
-        // STAGE 7: Deploy Gateway (if changed or full-deploy)
+        // STAGE 6: Deploy Gateway
         // ============================================
         stage('Deploy Gateway') {
-            when { 
-                expression { 
-                    (params.ACTION == 'full-deploy') || 
-                    (params.ACTION == 'smart-deploy' && env.BUILD_GATEWAY == 'true')
-                } 
-            }
+            when { expression { params.ACTION == 'full-deploy' } }
             steps {
                 build job: 'gateway-cd',
                     parameters: [
                         string(name: 'ACTION', value: 'apply'),
-                        string(name: 'EUREKA_IP', value: env.EUREKA_IP),
-                        string(name: 'SERVICE1_IP', value: env.SERVICE1_IP),
-                        string(name: 'SERVICE2_IP', value: env.SERVICE2_IP)
+                        string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
                     ],
                     wait: true
-                
-                script {
-                    dir('gateway/terraform') {
-                        env.GATEWAY_IP = sh(script: "terraform output -raw gateway_public_ip", returnStdout: true).trim()
-                        echo "✅ Gateway IP: ${env.GATEWAY_IP}"
-                    }
-                }
             }
         }
 
         // ============================================
-        // STAGE 8: Destroy All Services
+        // STAGE 7: Destroy All Services
         // ============================================
         stage('Destroy All Services') {
             when { expression { params.ACTION == 'full-destroy' } }
             steps {
-                echo "💥 Destroying all services..."
+                echo "💥 Destroying all services in ${params.ENVIRONMENT}..."
                 
-                build job: 'gateway-cd', parameters: [string(name: 'ACTION', value: 'destroy')], wait: true
-                build job: 'rabbitmq-cd', parameters: [string(name: 'ACTION', value: 'destroy')], wait: true
-                build job: 'service2-cd', parameters: [string(name: 'ACTION', value: 'destroy')], wait: true
-                build job: 'service1-cd', parameters: [string(name: 'ACTION', value: 'destroy')], wait: true
-                build job: 'redis-cd', parameters: [string(name: 'ACTION', value: 'destroy')], wait: true
-                build job: 'eureka-cd', parameters: [string(name: 'ACTION', value: 'destroy')], wait: true
+                build job: 'gateway-cd', 
+                    parameters: [string(name: 'ACTION', value: 'destroy')],
+                    wait: true
+                    
+                build job: 'rabbitmq-cd', 
+                    parameters: [string(name: 'ACTION', value: 'destroy')],
+                    wait: true
+                    
+                build job: 'service2-cd', 
+                    parameters: [string(name: 'ACTION', value: 'destroy')],
+                    wait: true
+                    
+                build job: 'service1-cd', 
+                    parameters: [string(name: 'ACTION', value: 'destroy')],
+                    wait: true
+                    
+                build job: 'redis-cd', 
+                    parameters: [string(name: 'ACTION', value: 'destroy')],
+                    wait: true
+                    
+                build job: 'eureka-cd', 
+                    parameters: [string(name: 'ACTION', value: 'destroy')],
+                    wait: true
                 
                 echo "✅ All services destroyed!"
             }
         }
 
         // ============================================
-        // STAGE 9: Summary
+        // STAGE 8: Deployment Summary
         // ============================================
         stage('Deployment Summary') {
-            when { expression { params.ACTION == 'full-deploy' || params.ACTION == 'smart-deploy' } }
+            when { expression { params.ACTION == 'full-deploy' } }
             steps {
-                script {
-                    echo "=========================================="
-                    echo "✅ DEPLOYMENT COMPLETED!"
-                    echo "=========================================="
-                    echo "Action: ${params.ACTION}"
-                    echo "Environment: ${params.ENVIRONMENT}"
-                    echo ""
-                    echo "Service Endpoints:"
-                    echo "  Eureka:     http://${env.EUREKA_IP}:8761"
-                    echo "  Gateway:    http://${env.GATEWAY_IP}:8080"
-                    echo "  Service1:   http://${env.SERVICE1_IP}:9001"
-                    echo "  Service2:   http://${env.SERVICE2_IP}:9002"
-                    echo "  Redis:      ${env.REDIS_IP}:1222"
-                    echo "  RabbitMQ:   ${env.RABBITMQ_IP}:8001"
-                    echo "=========================================="
-                }
+                echo "=========================================="
+                echo "✅ DEPLOYMENT COMPLETED!"
+                echo "=========================================="
+                echo "Environment: ${params.ENVIRONMENT}"
+                echo "Action: ${params.ACTION}"
+                echo ""
+                echo "All services deployed to ${params.ENVIRONMENT}"
+                echo "Check Eureka dashboard for service registration"
+                echo "=========================================="
             }
         }
     }
 
     post {
         success {
-            echo "🎉 Orchestrator completed successfully!"
+            echo "🎉 Orchestrator completed successfully for ${params.ENVIRONMENT}!"
         }
         failure {
-            echo "❌ Orchestrator failed!"
+            echo "❌ Orchestrator failed for ${params.ENVIRONMENT}!"
         }
     }
 }
