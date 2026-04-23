@@ -1,0 +1,175 @@
+@Library('jenkins-shared-lib-deno@main') _
+
+pipeline {
+    agent any
+
+    parameters {
+        choice(name: 'ACTION', choices: ['full-deploy', 'full-destroy', 'ci-only', 'cd-only'], description: 'What to do?')
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'staging', 'production'], description: 'Target environment')
+        booleanParam(name: 'SKIP_TESTS', defaultValue: false, description: 'Skip health checks')
+        booleanParam(name: 'AUTO_ROLLBACK', defaultValue: true, description: 'Auto rollback on failure')
+    }
+
+    environment {
+        AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_DEFAULT_REGION = 'us-east-1'
+        
+        DB_HOST = '172.21.12.151'
+        DB_USER = 'Admin'
+        DB_PASSWORD = 'Admin@123'
+        
+        // Store deployment versions
+        DEPLOYMENT_VERSIONS = ''
+    }
+
+    stages {
+        // ============================================
+        // CI - Build All Services (Parallel)
+        // ============================================
+        stage('CI - Build All Services') {
+            when { expression { params.ACTION == 'full-deploy' || params.ACTION == 'ci-only' } }
+            parallel {
+                stage('Build Eureka') { steps { build job: 'eureka-ci', wait: true } }
+                stage('Build Service1') { steps { build job: 'service1-ci', wait: true } }
+                stage('Build Service2') { steps { build job: 'service2-ci', wait: true } }
+                stage('Build Gateway') { steps { build job: 'gateway-ci', wait: true } }
+                stage('Build Redis') { steps { build job: 'redis-ci', wait: true } }
+                stage('Build RabbitMQ') { steps { build job: 'rabbitmq-ci', wait: true } }
+            }
+        }
+
+        // ============================================
+        // CD - Deploy with Health Checks
+        // ============================================
+        stage('CD - Deploy Eureka') {
+            when { expression { params.ACTION == 'full-deploy' || params.ACTION == 'cd-only' } }
+            steps {
+                script {
+                    deployWithHealthCheck('eureka-cd', null, '8761')
+                }
+            }
+        }
+
+        stage('CD - Deploy Redis') {
+            when { expression { params.ACTION == 'full-deploy' || params.ACTION == 'cd-only' } }
+            steps {
+                script {
+                    deployWithHealthCheck('redis-cd', null, '1222')
+                }
+            }
+        }
+
+        stage('CD - Deploy Service1 & Service2') {
+            when { expression { params.ACTION == 'full-deploy' || params.ACTION == 'cd-only' } }
+            parallel {
+                stage('Deploy Service1') {
+                    steps { script { deployWithHealthCheck('service1-cd', null, '9001') } }
+                }
+                stage('Deploy Service2') {
+                    steps { script { deployWithHealthCheck('service2-cd', null, '9002') } }
+                }
+            }
+        }
+
+        stage('CD - Deploy RabbitMQ') {
+            when { expression { params.ACTION == 'full-deploy' || params.ACTION == 'cd-only' } }
+            steps {
+                script {
+                    deployWithHealthCheck('rabbitmq-cd', null, '8001')
+                }
+            }
+        }
+
+        stage('CD - Deploy Gateway') {
+            when { expression { params.ACTION == 'full-deploy' || params.ACTION == 'cd-only' } }
+            steps {
+                script {
+                    deployWithHealthCheck('gateway-cd', null, '8080')
+                }
+            }
+        }
+
+        // ============================================
+        // Smoke Tests
+        // ============================================
+        stage('Smoke Tests') {
+            when { expression { params.ACTION == 'full-deploy' && !params.SKIP_TESTS } }
+            steps {
+                script {
+                    echo "Running smoke tests..."
+                    sh """
+                        # Test Eureka
+                        curl -f http://${env.EUREKA_IP}:8761/eureka/apps || exit 1
+                        
+                        # Test Gateway
+                        curl -f http://${env.GATEWAY_IP}:8080/actuator/health || exit 1
+                        
+                        # Test Service1
+                        curl -f http://${env.SERVICE1_IP}:9001/actuator/health || exit 1
+                        
+                        # Test Service2
+                        curl -f http://${env.SERVICE2_IP}:9002/actuator/health || exit 1
+                        
+                        echo "All smoke tests passed!"
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ All services deployed successfully!"
+            sendNotification('SUCCESS')
+        }
+        failure {
+            echo "❌ Deployment failed!"
+            sendNotification('FAILURE')
+            if (params.AUTO_ROLLBACK) {
+                echo "Initiating rollback..."
+                // Trigger rollback pipeline
+                build job: 'rollback-all', wait: false
+            }
+        }
+    }
+}
+
+// Helper function for deployment with health check
+def deployWithHealthCheck(String jobName, String amiId, String port) {
+    def buildResult = build(
+        job: jobName,
+        parameters: [
+            string(name: 'ACTION', value: 'apply'),
+            amiId ? string(name: 'AMI_ID', value: amiId) : null
+        ].findAll { it != null },
+        wait: true
+    )
+    
+    if (buildResult.result != 'SUCCESS') {
+        error "Deployment of ${jobName} failed!"
+    }
+    
+    // Get IP from terraform output
+    def serviceName = jobName.replace('-cd', '')
+    dir("${serviceName}/terraform") {
+        def ip = sh(script: "terraform output -raw ${serviceName}_private_ip", returnStdout: true).trim()
+        env["${serviceName.toUpperCase()}_IP"] = ip
+    }
+    
+    // Health check
+    if (!params.SKIP_TESTS) {
+        retry(30) {
+            sh """
+                sleep 5
+                curl -f http://${env["${serviceName.toUpperCase()}_IP"]}:${port}/actuator/health
+            """
+        }
+    }
+}
+
+def sendNotification(String status) {
+    // Slack notification (if configured)
+    // slackSend(color: status == 'SUCCESS' ? 'good' : 'danger', message: "Deployment ${status}")
+    echo "Notification: Deployment ${status}"
+}
