@@ -37,10 +37,8 @@ pipeline {
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
-                    echo "Eureka IP: ${DEFAULT_EUREKA_IP}"
-                    echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "DB URL: ${env.DB_URL}"
+                    echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "=========================================="
                 }
             }
@@ -58,7 +56,6 @@ pipeline {
                 script {
                     def amiId = params.AMI_ID
                     
-                    // If AMI_ID not provided, try to get from stash
                     if (!amiId || amiId == '') {
                         try {
                             unstash 'service2-ami'
@@ -70,7 +67,6 @@ pipeline {
                         }
                     }
                     
-                    // If still no AMI, query AWS for latest
                     if (!amiId || amiId == '') {
                         amiId = sh(script: """
                             aws ec2 describe-images \
@@ -84,7 +80,7 @@ pipeline {
                     }
                     
                     if (!amiId || amiId == '') {
-                        error "No AMI ID found! Please run service2-ci first or provide AMI_ID parameter."
+                        error "No AMI ID found!"
                     }
                     
                     env.AMI_ID = amiId
@@ -99,9 +95,6 @@ pipeline {
                 script {
                     if (!env.AMI_ID || env.AMI_ID == '') {
                         error "AMI_ID is required for apply action"
-                    }
-                    if (!(env.AMI_ID =~ /^ami-[a-f0-9]{17}$/)) {
-                        error "Invalid AMI ID format: ${env.AMI_ID}"
                     }
                     echo "✅ Validation passed"
                 }
@@ -123,6 +116,7 @@ pipeline {
                     sh """
                         terraform apply -auto-approve \
                             -var="ami_id=${env.AMI_ID}" \
+                            -var="aws_region=${env.AWS_DEFAULT_REGION}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="db_url=${env.DB_URL}" \
                             -var="db_username=${DB_USERNAME}" \
@@ -147,14 +141,12 @@ pipeline {
                 dir('service2/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw service2_public_ip", returnStdout: true).trim()
-                        def private_ip = sh(script: "terraform output -raw service2_private_ip", returnStdout: true).trim()
                         
                         echo "=========================================="
                         echo "✅ Service2 Deployed Successfully!"
                         echo "=========================================="
                         echo "AMI ID: ${env.AMI_ID}"
                         echo "Public IP: ${public_ip}"
-                        echo "Private IP: ${private_ip}"
                         echo "API URL: http://${public_ip}:9002"
                         echo "=========================================="
                     }
