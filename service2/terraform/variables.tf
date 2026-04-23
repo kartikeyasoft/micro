@@ -62,3 +62,9 @@ variable "key_name" {
   type        = string
   default     = "ksansible"
 }
+
+variable "assign_eip" {
+  description = "Assign Elastic IP to instance"
+  type        = bool
+  default     = false
+}
