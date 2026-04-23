@@ -108,9 +108,14 @@ pipeline {
                     script {
                         def jarFile = "target/service1-${env.SERVICE_VERSION}.jar"
                         def nexusPath = "${env.NEXUS_URL}/com/ksapp/service1/${env.SERVICE_VERSION}/service1-${env.SERVICE_VERSION}.jar"
-                        sh """
-                            curl -v -u ${env.NEXUS_CREDS} --upload-file ${jarFile} ${nexusPath}
-                        """
+                        
+                        withCredentials([usernamePassword(credentialsId: 'nexus-creds', 
+                                                        usernameVariable: 'NEXUS_USER', 
+                                                        passwordVariable: 'NEXUS_PASS')]) {
+                            sh """
+                                curl -f -u ${NEXUS_USER}:${NEXUS_PASS} --upload-file ${jarFile} ${nexusPath}
+                            """
+                        }
                     }
                 }
             }
