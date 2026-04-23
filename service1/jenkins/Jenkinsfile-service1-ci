@@ -149,7 +149,6 @@ pipeline {
                 }
             }
         }
-
         stage('Trigger CD Pipeline') {
             steps {
                 script {
@@ -163,6 +162,7 @@ pipeline {
                     if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
                         echo "✅ Valid AMI ID, triggering CD pipeline..."
                         
+                        // Pass ACTION as string (not choice)
                         build job: 'service1-cd',
                             parameters: [
                                 string(name: 'AMI_ID', value: env.AMI_ID),
@@ -177,7 +177,8 @@ pipeline {
                 }
             }
         }
-    }
+
+            }
 
     post {
         success {

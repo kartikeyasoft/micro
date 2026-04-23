@@ -5,7 +5,7 @@ pipeline {
 
     parameters {
         string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID (required for apply)')
-        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+        string(name: 'ACTION', defaultValue: 'apply', description: 'Terraform action (apply or destroy)')
     }
 
     environment {
@@ -100,8 +100,10 @@ pipeline {
                             error "AMI_ID is required for apply action"
                         }
                         echo "✅ Validation passed for apply"
-                    } else {
+                    } else if (params.ACTION == 'destroy') {
                         echo "✅ Destroy action - no validation needed"
+                    } else {
+                        error "Invalid ACTION: ${params.ACTION}. Must be 'apply' or 'destroy'"
                     }
                 }
             }
