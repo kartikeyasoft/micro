@@ -1,11 +1,9 @@
-@Library('jenkins-shared-lib-deno@main') _
-
 pipeline {
     agent any
 
     parameters {
-        string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID (required for apply)')
-        string(name: 'ACTION', defaultValue: 'apply', description: 'Terraform action (apply or destroy)')
+        string(name: 'AMI_ID', defaultValue: '', description: 'Service1 AMI ID')
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
     environment {
@@ -36,12 +34,9 @@ pipeline {
                     echo "Service1 CD Pipeline"
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
-                    if (params.ACTION == 'apply') {
-                        echo "AMI ID: ${params.AMI_ID}"
-                    }
+                    echo "AMI ID: ${params.AMI_ID}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "Eureka URL: ${env.EUREKA_URL}"
-                    echo "DB URL: ${env.DB_URL}"
                     echo "=========================================="
                 }
             }
@@ -83,7 +78,7 @@ pipeline {
                     }
                     
                     if (!amiId || amiId == '') {
-                        error "No AMI ID found! Please run service1-ci first or provide AMI_ID parameter."
+                        error "No AMI ID found!"
                     }
                     
                     env.AMI_ID = amiId
@@ -93,18 +88,13 @@ pipeline {
         }
 
         stage('Validate') {
+            when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
-                    if (params.ACTION == 'apply') {
-                        if (!env.AMI_ID || env.AMI_ID == '') {
-                            error "AMI_ID is required for apply action"
-                        }
-                        echo "✅ Validation passed for apply"
-                    } else if (params.ACTION == 'destroy') {
-                        echo "✅ Destroy action - no validation needed"
-                    } else {
-                        error "Invalid ACTION: ${params.ACTION}. Must be 'apply' or 'destroy'"
+                    if (!env.AMI_ID || env.AMI_ID == '') {
+                        error "AMI_ID is required for apply action"
                     }
+                    echo "✅ Validation passed"
                 }
             }
         }
@@ -149,14 +139,12 @@ pipeline {
                 dir('service1/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw service1_public_ip", returnStdout: true).trim()
-                        def private_ip = sh(script: "terraform output -raw service1_private_ip", returnStdout: true).trim()
                         
                         echo "=========================================="
                         echo "✅ Service1 Deployed Successfully!"
                         echo "=========================================="
                         echo "AMI ID: ${env.AMI_ID}"
                         echo "Public IP: ${public_ip}"
-                        echo "Private IP: ${private_ip}"
                         echo "API URL: http://${public_ip}:9001"
                         echo "=========================================="
                     }
