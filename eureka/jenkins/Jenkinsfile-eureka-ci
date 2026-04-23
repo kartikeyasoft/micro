@@ -146,34 +146,34 @@ pipeline {
             }
         }
 
-        stage('Trigger CD Pipeline') {
-            steps {
-                script {
-                    echo "=========================================="
-                    echo "Triggering CD Pipeline"
-                    echo "=========================================="
-                    echo "Version: ${env.SERVICE_VERSION}"
-                    echo "AMI ID: ${env.AMI_ID}"
-                    echo "=========================================="
+    //     stage('Trigger CD Pipeline') {
+    //         steps {
+    //             script {
+    //                 echo "=========================================="
+    //                 echo "Triggering CD Pipeline"
+    //                 echo "=========================================="
+    //                 echo "Version: ${env.SERVICE_VERSION}"
+    //                 echo "AMI ID: ${env.AMI_ID}"
+    //                 echo "=========================================="
                     
-                    if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
-                        echo "✅ Valid AMI ID, triggering CD pipeline..."
+    //                 if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+    //                     echo "✅ Valid AMI ID, triggering CD pipeline..."
                         
-                        build job: 'eureka-cd',
-                            parameters: [
-                                string(name: 'AMI_ID', value: env.AMI_ID),
-                                string(name: 'ACTION', value: 'apply')
-                            ],
-                            wait: false
+    //                     build job: 'eureka-cd',
+    //                         parameters: [
+    //                             string(name: 'AMI_ID', value: env.AMI_ID),
+    //                             string(name: 'ACTION', value: 'apply')
+    //                         ],
+    //                         wait: false
                         
-                        echo "✅ CD pipeline triggered successfully!"
-                    } else {
-                        error "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
-                    }
-                }
-            }
-        }
-    }
+    //                     echo "✅ CD pipeline triggered successfully!"
+    //                 } else {
+    //                     error "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     post {
         success {
