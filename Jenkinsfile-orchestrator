@@ -31,6 +31,10 @@ pipeline {
         booleanParam(name: 'SKIP_APPROVAL', 
                      defaultValue: false, 
                      description: 'Skip manual approval (use with caution)')
+        
+        booleanParam(name: 'AUTO_ROLLBACK', 
+                     defaultValue: true, 
+                     description: 'Auto rollback on failure')
     }
 
     environment {
@@ -489,19 +493,10 @@ pipeline {
                     echo "✅ Frontend config.json generated:"
                     cat config.json
                     
-                    // Optional: Deploy to frontend VM
-                    // Commented out - uncomment when frontend VM is ready
-                    /*
-                    sh """
-                        scp -o StrictHostKeyChecking=no config.json ubuntu@${env.FRONTEND_IP}:/home/ks/examfront/assets/
-                        ssh ubuntu@${env.FRONTEND_IP} "
-                            cd /home/ks/examfront && \\
-                            sudo pkill -f 'python3 -m http.server' 2>/dev/null || true && \\
-                            sudo python3 -m http.server 80 --bind 0.0.0.0 &
-                        "
-                    """
-                    echo "✅ Frontend deployed to ${env.FRONTEND_IP}"
-                    */
+                    echo "=========================================="
+                    echo "Frontend config generated. Manual deployment may be required."
+                    echo "Frontend VM IP: ${env.FRONTEND_IP}"
+                    echo "=========================================="
                 }
             }
         }
@@ -664,11 +659,8 @@ pipeline {
             
             if (params.AUTO_ROLLBACK && params.ACTION == 'full-deploy') {
                 echo "🔄 Initiating rollback..."
-                build job: 'rollback-all', 
-                    parameters: [
-                        string(name: 'ENVIRONMENT', value: params.ENVIRONMENT)
-                    ], 
-                    wait: false
+                // Note: Create 'rollback-all' job if needed
+                echo "Rollback would be triggered here (rollback-all job not yet configured)"
             }
         }
         aborted {
