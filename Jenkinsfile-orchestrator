@@ -3,8 +3,8 @@ pipeline {
 
     parameters {
         choice(name: 'ACTION', 
-               choices: ['full-deploy', 'full-destroy'], 
-               description: 'What to do?')
+               choices: ['full-deploy', 'smart-deploy', 'full-destroy'], 
+               description: 'What to do? (smart-deploy = only changed services)')
         
         choice(name: 'ENVIRONMENT', 
                choices: ['dev', 'staging', 'production'], 
@@ -13,49 +13,95 @@ pipeline {
 
     stages {
         // ============================================
-        // STAGE 1: Build All Services (Parallel)
+        // STAGE 1: Detect Changed Services
         // ============================================
-        stage('Build All Services') {
-            when { expression { params.ACTION == 'full-deploy' } }
-            parallel {
-                stage('Build Eureka') {
-                    steps {
-                        build job: 'eureka-ci', wait: true
+        stage('Detect Changes') {
+            when { expression { params.ACTION == 'smart-deploy' } }
+            steps {
+                script {
+                    // Get changed files in this commit
+                    def changedFiles = sh(script: """
+                        git diff --name-only HEAD~1 HEAD 2>/dev/null || echo ""
+                    """, returnStdout: true).trim()
+                    
+                    echo "Changed files: ${changedFiles}"
+                    
+                    // Detect which services changed
+                    env.BUILD_EUREKA = changedFiles.contains('eureka/') ? 'true' : 'false'
+                    env.BUILD_SERVICE1 = changedFiles.contains('service1/') ? 'true' : 'false'
+                    env.BUILD_SERVICE2 = changedFiles.contains('service2/') ? 'true' : 'false'
+                    env.BUILD_GATEWAY = changedFiles.contains('gateway/') ? 'true' : 'false'
+                    env.BUILD_REDIS = changedFiles.contains('redis/') ? 'true' : 'false'
+                    env.BUILD_RABBITMQ = changedFiles.contains('rabbitmq/') ? 'true' : 'false'
+                    
+                    // If shared files changed (pom.xml, shared lib), build all
+                    if (changedFiles.contains('pom.xml') || changedFiles.contains('jenkins-shared-lib-deno/')) {
+                        env.BUILD_EUREKA = 'true'
+                        env.BUILD_SERVICE1 = 'true'
+                        env.BUILD_SERVICE2 = 'true'
+                        env.BUILD_GATEWAY = 'true'
+                        env.BUILD_REDIS = 'true'
+                        env.BUILD_RABBITMQ = 'true'
+                        echo "Shared files changed. Building all services."
                     }
+                    
+                    echo "=========================================="
+                    echo "Services to build:"
+                    echo "  Eureka:   ${env.BUILD_EUREKA == 'true' ? '✅' : '❌'}"
+                    echo "  Service1: ${env.BUILD_SERVICE1 == 'true' ? '✅' : '❌'}"
+                    echo "  Service2: ${env.BUILD_SERVICE2 == 'true' ? '✅' : '❌'}"
+                    echo "  Gateway:  ${env.BUILD_GATEWAY == 'true' ? '✅' : '❌'}"
+                    echo "  Redis:    ${env.BUILD_REDIS == 'true' ? '✅' : '❌'}"
+                    echo "  RabbitMQ: ${env.BUILD_RABBITMQ == 'true' ? '✅' : '❌'}"
+                    echo "=========================================="
                 }
-                stage('Build Service1') {
-                    steps {
-                        build job: 'service1-ci', wait: true
-                    }
-                }
-                stage('Build Service2') {
-                    steps {
-                        build job: 'service2-ci', wait: true
-                    }
-                }
-                stage('Build Gateway') {
-                    steps {
-                        build job: 'gateway-ci', wait: true
-                    }
-                }
-                stage('Build Redis') {
-                    steps {
-                        build job: 'redis-ci', wait: true
-                    }
-                }
-                stage('Build RabbitMQ') {
-                    steps {
-                        build job: 'rabbitmq-ci', wait: true
+            }
+        }
+
+        // ============================================
+        // STAGE 2: Build Only Changed Services
+        // ============================================
+        stage('Build Services') {
+            when { expression { params.ACTION == 'smart-deploy' || params.ACTION == 'full-deploy' } }
+            steps {
+                script {
+                    def parallelStages = [:]
+                    
+                    // For full-deploy, build everything
+                    def buildEureka = (params.ACTION == 'full-deploy') || (env.BUILD_EUREKA == 'true')
+                    def buildService1 = (params.ACTION == 'full-deploy') || (env.BUILD_SERVICE1 == 'true')
+                    def buildService2 = (params.ACTION == 'full-deploy') || (env.BUILD_SERVICE2 == 'true')
+                    def buildGateway = (params.ACTION == 'full-deploy') || (env.BUILD_GATEWAY == 'true')
+                    def buildRedis = (params.ACTION == 'full-deploy') || (env.BUILD_REDIS == 'true')
+                    def buildRabbitMQ = (params.ACTION == 'full-deploy') || (env.BUILD_RABBITMQ == 'true')
+                    
+                    if (buildEureka) parallelStages['Build Eureka'] = { build job: 'eureka-ci', wait: true }
+                    if (buildService1) parallelStages['Build Service1'] = { build job: 'service1-ci', wait: true }
+                    if (buildService2) parallelStages['Build Service2'] = { build job: 'service2-ci', wait: true }
+                    if (buildGateway) parallelStages['Build Gateway'] = { build job: 'gateway-ci', wait: true }
+                    if (buildRedis) parallelStages['Build Redis'] = { build job: 'redis-ci', wait: true }
+                    if (buildRabbitMQ) parallelStages['Build RabbitMQ'] = { build job: 'rabbitmq-ci', wait: true }
+                    
+                    if (parallelStages.size() == 0) {
+                        echo "⚠️ No services changed. Skipping build."
+                    } else {
+                        echo "🚀 Building ${parallelStages.size()} service(s)..."
+                        parallel parallelStages
                     }
                 }
             }
         }
 
         // ============================================
-        // STAGE 2: Deploy Eureka
+        // STAGE 3: Deploy Eureka (if changed or full-deploy)
         // ============================================
         stage('Deploy Eureka') {
-            when { expression { params.ACTION == 'full-deploy' } }
+            when { 
+                expression { 
+                    (params.ACTION == 'full-deploy') || 
+                    (params.ACTION == 'smart-deploy' && env.BUILD_EUREKA == 'true')
+                } 
+            }
             steps {
                 build job: 'eureka-cd', 
                     parameters: [string(name: 'ACTION', value: 'apply')],
@@ -71,10 +117,15 @@ pipeline {
         }
 
         // ============================================
-        // STAGE 3: Deploy Redis
+        // STAGE 4: Deploy Redis (if changed or full-deploy)
         // ============================================
         stage('Deploy Redis') {
-            when { expression { params.ACTION == 'full-deploy' } }
+            when { 
+                expression { 
+                    (params.ACTION == 'full-deploy') || 
+                    (params.ACTION == 'smart-deploy' && env.BUILD_REDIS == 'true')
+                } 
+            }
             steps {
                 build job: 'redis-cd',
                     parameters: [
@@ -93,12 +144,23 @@ pipeline {
         }
 
         // ============================================
-        // STAGE 4: Deploy Service1 & Service2 (Parallel)
+        // STAGE 5: Deploy Service1 & Service2 (Parallel)
         // ============================================
         stage('Deploy Service1 & Service2') {
-            when { expression { params.ACTION == 'full-deploy' } }
+            when { 
+                expression { 
+                    (params.ACTION == 'full-deploy') || 
+                    (params.ACTION == 'smart-deploy' && (env.BUILD_SERVICE1 == 'true' || env.BUILD_SERVICE2 == 'true'))
+                } 
+            }
             parallel {
                 stage('Deploy Service1') {
+                    when { 
+                        expression { 
+                            (params.ACTION == 'full-deploy') || 
+                            (params.ACTION == 'smart-deploy' && env.BUILD_SERVICE1 == 'true')
+                        } 
+                    }
                     steps {
                         build job: 'service1-cd',
                             parameters: [
@@ -117,6 +179,12 @@ pipeline {
                 }
                 
                 stage('Deploy Service2') {
+                    when { 
+                        expression { 
+                            (params.ACTION == 'full-deploy') || 
+                            (params.ACTION == 'smart-deploy' && env.BUILD_SERVICE2 == 'true')
+                        } 
+                    }
                     steps {
                         build job: 'service2-cd',
                             parameters: [
@@ -137,10 +205,15 @@ pipeline {
         }
 
         // ============================================
-        // STAGE 5: Deploy RabbitMQ
+        // STAGE 6: Deploy RabbitMQ (if changed or full-deploy)
         // ============================================
         stage('Deploy RabbitMQ') {
-            when { expression { params.ACTION == 'full-deploy' } }
+            when { 
+                expression { 
+                    (params.ACTION == 'full-deploy') || 
+                    (params.ACTION == 'smart-deploy' && env.BUILD_RABBITMQ == 'true')
+                } 
+            }
             steps {
                 build job: 'rabbitmq-cd',
                     parameters: [
@@ -160,10 +233,15 @@ pipeline {
         }
 
         // ============================================
-        // STAGE 6: Deploy Gateway
+        // STAGE 7: Deploy Gateway (if changed or full-deploy)
         // ============================================
         stage('Deploy Gateway') {
-            when { expression { params.ACTION == 'full-deploy' } }
+            when { 
+                expression { 
+                    (params.ACTION == 'full-deploy') || 
+                    (params.ACTION == 'smart-deploy' && env.BUILD_GATEWAY == 'true')
+                } 
+            }
             steps {
                 build job: 'gateway-cd',
                     parameters: [
@@ -184,7 +262,7 @@ pipeline {
         }
 
         // ============================================
-        // STAGE 7: Destroy All Services (Reverse Order)
+        // STAGE 8: Destroy All Services
         // ============================================
         stage('Destroy All Services') {
             when { expression { params.ACTION == 'full-destroy' } }
@@ -203,15 +281,16 @@ pipeline {
         }
 
         // ============================================
-        // STAGE 8: Final Summary
+        // STAGE 9: Summary
         // ============================================
         stage('Deployment Summary') {
-            when { expression { params.ACTION == 'full-deploy' } }
+            when { expression { params.ACTION == 'full-deploy' || params.ACTION == 'smart-deploy' } }
             steps {
                 script {
                     echo "=========================================="
                     echo "✅ DEPLOYMENT COMPLETED!"
                     echo "=========================================="
+                    echo "Action: ${params.ACTION}"
                     echo "Environment: ${params.ENVIRONMENT}"
                     echo ""
                     echo "Service Endpoints:"
