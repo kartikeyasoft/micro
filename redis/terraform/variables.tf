@@ -1,19 +1,25 @@
+variable "ami_id" {
+  description = "Redis Service AMI ID"
+  type        = string
+  default     = ""
+}
+
 variable "aws_region" {
   description = "AWS region"
   type        = string
   default     = "us-east-1"
 }
 
-variable "environment" {
-  description = "Environment name (dev, staging, prod)"
+variable "eureka_url" {
+  description = "Eureka server URL"
   type        = string
-  default     = "production"
+  default     = "http://localhost:8761/eureka/"
 }
 
-variable "ami_id" {
-  description = "Redis AMI ID (leave empty to use latest)"
+variable "environment" {
+  description = "Environment name"
   type        = string
-  default     = ""
+  default     = "production"
 }
 
 variable "instance_type" {
