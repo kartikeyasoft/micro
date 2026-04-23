@@ -4,6 +4,7 @@ pipeline {
     agent any
 
     parameters {
+        string(name: 'AMI_ID', defaultValue: '', description: 'Service2 AMI ID')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
@@ -17,21 +18,17 @@ pipeline {
         DB_PASSWORD = credentials('db-password')
         
         // Default values
+        DEFAULT_AWS_REGION = 'us-east-1'
         DEFAULT_EUREKA_IP = '192.168.29.63'
         DEFAULT_DB_URL = 'jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC'
-        
-        AWS_DEFAULT_REGION = ''
-        DB_URL = ''
-        EUREKA_URL = ''
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
-                    def awsCfg = awsConfig()
-                    
-                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    // Set AWS region
+                    env.AWS_DEFAULT_REGION = DEFAULT_AWS_REGION
                     env.DB_URL = DEFAULT_DB_URL
                     env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
                     
@@ -39,8 +36,11 @@ pipeline {
                     echo "Service2 CD Pipeline"
                     echo "=========================================="
                     echo "Action: ${params.ACTION}"
+                    echo "AMI ID: ${params.AMI_ID}"
                     echo "Eureka IP: ${DEFAULT_EUREKA_IP}"
+                    echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "DB URL: ${env.DB_URL}"
                     echo "=========================================="
                 }
             }
@@ -56,21 +56,39 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
-                    try {
-                        unstash 'service2-ami'
-                        def amiProps = readFile('golden-ami.properties')
-                        env.AMI_ID = amiProps.split('=')[1].trim()
-                        echo "✅ Retrieved AMI ID from CI: ${env.AMI_ID}"
-                    } catch (Exception e) {
-                        env.AMI_ID = sh(script: """
+                    def amiId = params.AMI_ID
+                    
+                    // If AMI_ID not provided, try to get from stash
+                    if (!amiId || amiId == '') {
+                        try {
+                            unstash 'service2-ami'
+                            def amiProps = readFile('golden-ami.properties')
+                            amiId = amiProps.split('=')[1].trim()
+                            echo "✅ Retrieved AMI from CI: ${amiId}"
+                        } catch (Exception e) {
+                            echo "No AMI found in stash"
+                        }
+                    }
+                    
+                    // If still no AMI, query AWS for latest
+                    if (!amiId || amiId == '') {
+                        amiId = sh(script: """
                             aws ec2 describe-images \
+                                --region ${env.AWS_DEFAULT_REGION} \
                                 --owners self \
                                 --filters "Name=name,Values=myapp-service2-v*" \
                                 --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
                                 --output text
                         """, returnStdout: true).trim()
-                        echo "✅ Found latest AMI from AWS: ${env.AMI_ID}"
+                        echo "✅ Found latest AMI from AWS: ${amiId}"
                     }
+                    
+                    if (!amiId || amiId == '') {
+                        error "No AMI ID found! Please run service2-ci first or provide AMI_ID parameter."
+                    }
+                    
+                    env.AMI_ID = amiId
+                    echo "✅ Using AMI ID: ${env.AMI_ID}"
                 }
             }
         }
@@ -80,9 +98,12 @@ pipeline {
             steps {
                 script {
                     if (!env.AMI_ID || env.AMI_ID == '') {
-                        error "No AMI ID found!"
+                        error "AMI_ID is required for apply action"
                     }
-                    echo "✅ Using AMI ID: ${env.AMI_ID}"
+                    if (!(env.AMI_ID =~ /^ami-[a-f0-9]{17}$/)) {
+                        error "Invalid AMI ID format: ${env.AMI_ID}"
+                    }
+                    echo "✅ Validation passed"
                 }
             }
         }
