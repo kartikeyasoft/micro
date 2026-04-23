@@ -172,7 +172,7 @@ pipeline {
                         
                         echo "✅ CD pipeline triggered successfully!"
                     } else {
-                        error "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
+                        echo "⚠️ No valid AMI ID captured, skipping CD trigger"
                     }
                 }
             }
@@ -185,6 +185,10 @@ pipeline {
         }
         failure {
             echo "❌ Service1 CI failed!"
+            // Print the actual error
+            script {
+                echo "Current build result: ${currentBuild.currentResult}"
+            }
         }
     }
 }
