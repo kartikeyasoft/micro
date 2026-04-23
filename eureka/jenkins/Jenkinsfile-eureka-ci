@@ -97,12 +97,16 @@ pipeline {
             steps {
                 dir('eureka') {
                     script {
-                        def nexusCfg = nexusConfig()
                         def jarFile = "target/eureka-${env.SERVICE_VERSION}.jar"
-                        def nexusPath = nexusCfg.getUploadPath(env.SERVICE_NAME, env.SERVICE_VERSION)
-                        sh """
-                            curl -v -u ${env.NEXUS_CREDS} --upload-file ${jarFile} ${nexusPath}
-                        """
+                        def nexusPath = "${env.NEXUS_URL}/com/ksapp/eureka/${env.SERVICE_VERSION}/eureka-${env.SERVICE_VERSION}.jar"
+                        
+                        withCredentials([usernamePassword(credentialsId: 'nexus-creds', 
+                                                        usernameVariable: 'NEXUS_USER', 
+                                                        passwordVariable: 'NEXUS_PASS')]) {
+                            sh """
+                                curl -f -u ${NEXUS_USER}:${NEXUS_PASS} --upload-file ${jarFile} ${nexusPath}
+                            """
+                        }
                     }
                 }
             }
