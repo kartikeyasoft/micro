@@ -1,5 +1,7 @@
 variable "ami_id" {
-  type = string
+  description = "Service2 AMI ID"
+  type        = string
+  default     = ""   # ← Add this line
 }
 
 variable "aws_region" {
