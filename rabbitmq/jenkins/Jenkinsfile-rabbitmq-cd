@@ -4,32 +4,39 @@ pipeline {
     agent any
 
     parameters {
+        string(name: 'AMI_ID', defaultValue: '', description: 'RabbitMQ Backend AMI ID')
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
     }
 
     environment {
+        // AWS Credentials from Jenkins
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
         
+        // Default values
+        DEFAULT_AWS_REGION = 'us-east-1'
         DEFAULT_EUREKA_IP = '192.168.29.63'
         DEFAULT_REDIS_IP = '192.168.29.67'
-        
-        AWS_DEFAULT_REGION = ''
-        EUREKA_URL = ''
-        REDIS_SERVICE_URL = ''
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
-                    def awsCfg = awsConfig()
-                    
-                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    // Set AWS region
+                    env.AWS_DEFAULT_REGION = DEFAULT_AWS_REGION
                     env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
                     env.REDIS_SERVICE_URL = "http://${DEFAULT_REDIS_IP}:1222/redis"
                     
-                    echo "RabbitMQ CD Pipeline - Action: ${params.ACTION}"
+                    echo "=========================================="
+                    echo "RabbitMQ CD Pipeline"
+                    echo "=========================================="
+                    echo "Action: ${params.ACTION}"
+                    echo "AMI ID: ${params.AMI_ID}"
+                    echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "Eureka URL: ${env.EUREKA_URL}"
+                    echo "Redis Service URL: ${env.REDIS_SERVICE_URL}"
+                    echo "=========================================="
                 }
             }
         }
@@ -44,19 +51,49 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
-                    try {
-                        unstash 'rabbitmq-ami'
-                        def amiProps = readFile('golden-ami.properties')
-                        env.AMI_ID = amiProps.split('=')[1].trim()
-                    } catch (Exception e) {
-                        env.AMI_ID = sh(script: """
+                    def amiId = params.AMI_ID
+                    
+                    if (!amiId || amiId == '') {
+                        try {
+                            unstash 'rabbitmq-ami'
+                            def amiProps = readFile('golden-ami.properties')
+                            amiId = amiProps.split('=')[1].trim()
+                            echo "✅ Retrieved AMI from CI: ${amiId}"
+                        } catch (Exception e) {
+                            echo "No AMI found in stash"
+                        }
+                    }
+                    
+                    if (!amiId || amiId == '') {
+                        amiId = sh(script: """
                             aws ec2 describe-images \
+                                --region ${env.AWS_DEFAULT_REGION} \
                                 --owners self \
                                 --filters "Name=name,Values=myapp-rabbitmq-backend-v*" \
                                 --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
                                 --output text
                         """, returnStdout: true).trim()
+                        echo "✅ Found latest AMI from AWS: ${amiId}"
                     }
+                    
+                    if (!amiId || amiId == '') {
+                        error "No AMI ID found!"
+                    }
+                    
+                    env.AMI_ID = amiId
+                    echo "✅ Using AMI ID: ${env.AMI_ID}"
+                }
+            }
+        }
+
+        stage('Validate') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                script {
+                    if (!env.AMI_ID || env.AMI_ID == '') {
+                        error "AMI_ID is required for apply action"
+                    }
+                    echo "✅ Validation passed"
                 }
             }
         }
@@ -76,6 +113,7 @@ pipeline {
                     sh """
                         terraform apply -auto-approve \
                             -var="ami_id=${env.AMI_ID}" \
+                            -var="aws_region=${env.AWS_DEFAULT_REGION}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="redis_service_url=${env.REDIS_SERVICE_URL}"
                     """
@@ -98,10 +136,27 @@ pipeline {
                 dir('rabbitmq/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw rabbitmq_public_ip", returnStdout: true).trim()
-                        echo "RabbitMQ deployed at: http://${public_ip}:8001"
+                        
+                        echo "=========================================="
+                        echo "✅ RabbitMQ Backend Deployed Successfully!"
+                        echo "=========================================="
+                        echo "AMI ID: ${env.AMI_ID}"
+                        echo "Public IP: ${public_ip}"
+                        echo "API URL: http://${public_ip}:8001"
+                        echo "WebSocket URL: ws://${public_ip}:8001/ws"
+                        echo "=========================================="
                     }
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ RabbitMQ ${params.ACTION} completed successfully!"
+        }
+        failure {
+            echo "❌ RabbitMQ ${params.ACTION} failed!"
         }
     }
 }
