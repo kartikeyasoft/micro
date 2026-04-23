@@ -143,7 +143,12 @@ pipeline {
             when { expression { params.ACTION == 'destroy' } }
             steps {
                 dir('gateway/terraform') {
-                    sh 'terraform destroy -auto-approve'
+                    // For destroy, we only need aws_region and ami_id (with dummy value)
+                    sh """
+                        terraform destroy -auto-approve \
+                            -var="ami_id=dummy" \
+                            -var="aws_region=${env.AWS_DEFAULT_REGION}"
+                    """
                 }
             }
         }

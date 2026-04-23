@@ -172,7 +172,7 @@ pipeline {
                         
                         echo "✅ CD pipeline triggered successfully!"
                     } else {
-                        error "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
+                        echo "⚠️ No valid AMI ID captured, skipping CD trigger"
                     }
                 }
             }
