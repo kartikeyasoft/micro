@@ -22,12 +22,10 @@ pipeline {
         stage('Load Configuration') {
             steps {
                 script {
-                    // Set AWS region from shared library
                     def awsCfg = awsConfig()
-                    env.AWS_DEFAULT_REGION = awsCfg.region
-                    
-                    // Set DB URL from shared library
                     def dbCfg = dbConfig()
+                    
+                    env.AWS_DEFAULT_REGION = awsCfg.region
                     env.DB_URL = dbCfg.url
                     
                     echo "=========================================="
@@ -36,6 +34,7 @@ pipeline {
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "DB URL: ${env.DB_URL}"  // ← Add this line
                     echo "=========================================="
                 }
             }
