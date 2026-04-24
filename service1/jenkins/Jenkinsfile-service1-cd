@@ -1,3 +1,5 @@
+@Library('jenkins-shared-lib-deno@main') _
+
 pipeline {
     agent any
 
@@ -14,21 +16,19 @@ pipeline {
         // Database credentials from Jenkins
         DB_USERNAME = credentials('db-username')
         DB_PASSWORD = credentials('db-password')
-        
-        // Default values
-        DEFAULT_AWS_REGION = 'us-east-1'
-        DEFAULT_EUREKA_IP = '192.168.29.63'
-        DEFAULT_DB_URL = 'jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC'
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
-                    // Set AWS region
-                    env.AWS_DEFAULT_REGION = DEFAULT_AWS_REGION
-                    env.DB_URL = DEFAULT_DB_URL
-                    env.EUREKA_URL = "http://${DEFAULT_EUREKA_IP}:8761/eureka/"
+                    // Set AWS region from shared library
+                    def awsCfg = awsConfig()
+                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    
+                    // Set DB URL from shared library
+                    def dbCfg = dbConfig()
+                    env.DB_URL = dbCfg.url
                     
                     echo "=========================================="
                     echo "Service1 CD Pipeline"
@@ -36,7 +36,6 @@ pipeline {
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "Eureka URL: ${env.EUREKA_URL}"
                     echo "=========================================="
                 }
             }
@@ -45,6 +44,39 @@ pipeline {
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
+            }
+        }
+
+        stage('Discover Eureka IP') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                script {
+                    // Discover Eureka IP from AWS
+                    def eurekaIp = sh(script: """
+                        aws ec2 describe-instances \
+                            --filters "Name=tag:Name,Values=eureka*" "Name=instance-state-name,Values=running" \
+                            --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+                            --region ${env.AWS_DEFAULT_REGION} \
+                            --output text
+                    """, returnStdout: true).trim()
+                    
+                    // Fallback to Parameter Store
+                    if (!eurekaIp || eurekaIp == 'None') {
+                        eurekaIp = sh(script: """
+                            aws ssm get-parameter \
+                                --name "/exam/eureka/ip" \
+                                --query 'Parameter.Value' \
+                                --output text 2>/dev/null || echo ""
+                        """, returnStdout: true).trim()
+                    }
+                    
+                    if (!eurekaIp || eurekaIp == '') {
+                        error "Could not discover Eureka IP. Please ensure Eureka is running."
+                    }
+                    
+                    env.EUREKA_URL = "http://${eurekaIp}:8761/eureka/"
+                    echo "✅ Auto-discovered Eureka at: ${env.EUREKA_URL}"
+                }
             }
         }
 
@@ -93,6 +125,9 @@ pipeline {
                 script {
                     if (!env.AMI_ID || env.AMI_ID == '') {
                         error "AMI_ID is required for apply action"
+                    }
+                    if (!env.EUREKA_URL || env.EUREKA_URL == '') {
+                        error "EUREKA_URL is required for apply action"
                     }
                     echo "✅ Validation passed"
                 }
