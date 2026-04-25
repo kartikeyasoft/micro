@@ -67,33 +67,12 @@ resource "aws_instance" "service1" {
   vpc_security_group_ids = [aws_security_group.service1.id]
   key_name               = var.key_name
 
-  # Only create environment file if variables are provided (not during destroy preview)
-  user_data = var.eureka_url != "" ? <<-EOF
-    #!/bin/bash
-    # Create environment file with correct Eureka URL
-    cat > /opt/service1/service1.env << 'ENVEOF'
-    EUREKA_URL=${var.eureka_url}
-    SERVER_PORT=9001
-    SPRING_APP_NAME=service1
-    DB_URL=${var.db_url}
-    DB_USER=${var.db_username}
-    DB_PASSWORD=${var.db_password}
-    ENVEOF
-    
-    chown service1:service1 /opt/service1/service1.env 2>/dev/null || true
-    chmod 600 /opt/service1/service1.env 2>/dev/null || true
-    
-    # Create systemd override
-    mkdir -p /etc/systemd/system/service1.service.d
-    cat > /etc/systemd/system/service1.service.d/override.conf << 'SYSTEMDEOF'
-    [Service]
-    EnvironmentFile=/opt/service1/service1.env
-    SYSTEMDEOF
-    
-    systemctl daemon-reload
-    systemctl restart service1
-    echo "Service1 configured with Eureka URL: ${var.eureka_url}"
-  EOF : ""
+  user_data = var.eureka_url != "" ? templatefile("${path.module}/user_data.sh.tpl", {
+    eureka_url  = var.eureka_url
+    db_url      = var.db_url
+    db_username = var.db_username
+    db_password = var.db_password
+  }) : null
 
   tags = {
     Name        = "service1-${var.environment}"
