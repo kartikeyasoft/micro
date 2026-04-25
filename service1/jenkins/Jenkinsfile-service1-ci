@@ -110,15 +110,25 @@ pipeline {
                 dir('service1') {
                     script {
                         def jarFile = "target/service1-${env.SERVICE_VERSION}.jar"
-                        def nexusPath = "${env.NEXUS_URL}/com/ksapp/service1/${env.SERVICE_VERSION}/service1-${env.SERVICE_VERSION}.jar"
+                        def nexusBaseUrl = env.NEXUS_URL.trim().replaceAll('/$', '')
+                        def nexusPath = "${nexusBaseUrl}/com/ksapp/service1/${env.SERVICE_VERSION}/service1-${env.SERVICE_VERSION}.jar"
                         
-                        sh """
-                            curl -f -u ${NEXUS_CREDS_USR}:${NEXUS_CREDS_PSW} --upload-file ${jarFile} ${nexusPath}
-                        """
+                        echo "Uploading to: ${nexusPath}"
+                        
+                        withCredentials([usernamePassword(credentialsId: 'nexus-creds', 
+                                                        usernameVariable: 'NEXUS_USER', 
+                                                        passwordVariable: 'NEXUS_PASS')]) {
+                            sh """
+                                curl -v -f -u \${NEXUS_USER}:\${NEXUS_PASS} \
+                                    --upload-file ${jarFile} \
+                                    ${nexusPath}
+                            """
+                        }
                     }
                 }
             }
         }
+
 
         stage('Bake Golden Image') {
             steps {
