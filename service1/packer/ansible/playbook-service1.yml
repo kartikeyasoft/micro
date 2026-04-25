@@ -34,6 +34,11 @@
         name: mysql-client
         state: present
 
+    - name: Install AWS CLI for Parameter Store access
+      apt:
+        name: awscli
+        state: present
+
     - name: Create service1 user
       user:
         name: "{{ app_user }}"
@@ -49,19 +54,19 @@
         group: "{{ app_user }}"
         mode: "0755"
 
-    - name: Create application.properties with dynamic values
+    - name: Create application.properties with environment variables support
       copy:
         content: |
           # Server Configuration
-          server.port={{ service_port }}
+          server.port=${SERVER_PORT:-{{ service_port }}}
           
           # Application Name
-          spring.application.name={{ app_name }}
+          spring.application.name=${SPRING_APP_NAME:-{{ app_name }}}
           
           # Database Configuration
-          spring.datasource.url=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
-          spring.datasource.username={{ db_username }}
-          spring.datasource.password={{ db_password }}
+          spring.datasource.url=${DB_URL:-jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC}
+          spring.datasource.username=${DB_USER:-{{ db_username }}}
+          spring.datasource.password=${DB_PASSWORD:-{{ db_password }}}
           spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
           
           # HikariCP Connection Pool Settings
@@ -79,8 +84,8 @@
           spring.servlet.multipart.max-file-size=5MB
           spring.servlet.multipart.max-request-size=5MB
           
-          # Eureka Configuration
-          eureka.client.service-url.defaultZone=http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
+          # Eureka Configuration - Read from environment variable
+          eureka.client.service-url.defaultZone=${EUREKA_URL:-http://{{ eureka_ip }}:{{ eureka_port }}/eureka/}
           eureka.instance.prefer-ip-address=true
           eureka.instance.lease-renewal-interval-in-seconds=30
           eureka.instance.lease-expiration-duration-in-seconds=90
@@ -96,6 +101,37 @@
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: "0644"
+
+    - name: Create environment file template
+      copy:
+        content: |
+          # Environment variables for Service1
+          # This file will be overwritten at deployment time with actual values
+          EUREKA_URL=http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
+          SERVER_PORT={{ service_port }}
+          SPRING_APP_NAME={{ app_name }}
+          DB_URL=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
+          DB_USER={{ db_username }}
+          DB_PASSWORD={{ db_password }}
+        dest: "/opt/{{ app_name }}/service1.env.template"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0644"
+
+    - name: Create initial environment file
+      copy:
+        content: |
+          # Environment variables for Service1
+          EUREKA_URL=http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
+          SERVER_PORT={{ service_port }}
+          SPRING_APP_NAME={{ app_name }}
+          DB_URL=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
+          DB_USER={{ db_username }}
+          DB_PASSWORD={{ db_password }}
+        dest: "/opt/{{ app_name }}/service1.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0600"
 
     - name: Download Service1 JAR from Nexus
       get_url:
@@ -120,7 +156,7 @@
         msg: "JAR file was not downloaded successfully from Nexus"
       when: not jar_file.stat.exists or jar_file.stat.size == 0
 
-    - name: Create systemd service file
+    - name: Create systemd service file with environment file support
       copy:
         content: |
           [Unit]
@@ -132,12 +168,17 @@
           User={{ app_user }}
           Group={{ app_user }}
           WorkingDirectory=/opt/{{ app_name }}
+          EnvironmentFile=-/opt/{{ app_name }}/service1.env
           ExecStart=/usr/bin/java -jar /opt/{{ app_name }}/{{ app_name }}.jar
           SuccessExitStatus=143
           Restart=always
           RestartSec=10
           StandardOutput=journal
           StandardError=journal
+          
+          # Timeout settings for slow startup
+          TimeoutStartSec=300
+          TimeoutStopSec=120
           
           # Security settings
           NoNewPrivileges=true
@@ -146,6 +187,73 @@
           [Install]
           WantedBy=multi-user.target
         dest: "/etc/systemd/system/{{ app_name }}.service"
+        mode: "0644"
+
+    - name: Create dynamic Eureka update script
+      copy:
+        content: |
+          #!/bin/bash
+          # Script to dynamically update Eureka URL at boot time
+          
+          # Wait for network to be ready
+          sleep 10
+          
+          # Try to get Eureka IP from AWS Parameter Store
+          EUREKA_IP=$(aws ssm get-parameter --name "/exam/eureka/ip" --query 'Parameter.Value' --output text 2>/dev/null)
+          
+          if [ -z "$EUREKA_IP" ] || [ "$EUREKA_IP" == "None" ]; then
+              # Fallback: Try to discover Eureka via EC2 tags
+              EUREKA_IP=$(aws ec2 describe-instances \
+                  --filters "Name=tag:Name,Values=eureka*" "Name=instance-state-name,Values=running" \
+                  --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+                  --output text 2>/dev/null)
+          fi
+          
+          if [ -z "$EUREKA_IP" ] || [ "$EUREKA_IP" == "None" ]; then
+              # Final fallback: Use the default from AMI
+              EUREKA_IP="{{ eureka_ip }}"
+          fi
+          
+          # Update the environment file with correct Eureka URL
+          cat > /opt/service1/service1.env << EOF
+          EUREKA_URL=http://${EUREKA_IP}:{{ eureka_port }}/eureka/
+          SERVER_PORT={{ service_port }}
+          SPRING_APP_NAME={{ app_name }}
+          DB_URL=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
+          DB_USER={{ db_username }}
+          DB_PASSWORD={{ db_password }}
+          EOF
+          
+          # Set correct permissions
+          chown service1:service1 /opt/service1/service1.env
+          chmod 600 /opt/service1/service1.env
+          
+          # Restart service to pick up new configuration
+          systemctl restart service1
+          
+          echo "Eureka URL configured: http://${EUREKA_IP}:{{ eureka_port }}/eureka/"
+        dest: "/opt/{{ app_name }}/update-eureka.sh"
+        owner: "root"
+        group: "root"
+        mode: "0755"
+
+    - name: Create systemd service for Eureka update at boot
+      copy:
+        content: |
+          [Unit]
+          Description=Update Eureka configuration for Service1
+          After=network.target
+          Wants=network.target
+          Before=service1.service
+          
+          [Service]
+          Type=oneshot
+          ExecStart=/opt/service1/update-eureka.sh
+          RemainAfterExit=yes
+          
+          [Install]
+          WantedBy=multi-user.target
+        dest: "/etc/systemd/system/service1-eureka-update.service"
         mode: "0644"
 
     - name: Reload systemd
@@ -157,12 +265,15 @@
         name: "{{ app_name }}"
         enabled: yes
 
+    - name: Enable eureka update service
+      systemd:
+        name: service1-eureka-update
+        enabled: yes
+
     - name: Start service
       systemd:
         name: "{{ app_name }}"
         state: started
-
-    # REMOVED: Wait for service to start - Not needed for AMI baking
 
     - name: Debug - Check database username
       debug:
@@ -182,5 +293,5 @@
           Service Name: {{ app_name }}
           Service Port: {{ service_port }}
           Database Host: {{ db_host }}
-          Eureka URL: http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
+          Eureka URL: Will be discovered dynamically at boot
           ========================================
