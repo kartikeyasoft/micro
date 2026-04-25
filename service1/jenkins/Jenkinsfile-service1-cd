@@ -13,9 +13,8 @@ pipeline {
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
         
-        // Database credentials from Jenkins
-        DB_USERNAME = credentials('db-username')
-        DB_PASSWORD = credentials('db-password')
+        // Database credentials - this creates DB_CREDS_USR and DB_CREDS_PSW
+        DB_CREDS = credentials('db-username')
     }
 
     stages {
@@ -32,6 +31,7 @@ pipeline {
                     env.DB_HOST = config.db.host
                     env.DB_PORT = config.db.port
                     env.DB_NAME = config.db.name
+                    env.SERVICE_NAME = 'service1'
                     env.SERVICE_PORT = config.services.service1.defaultPort
                     env.EUREKA_PORT = config.eureka.defaultPort
                     env.EUREKA_IP = config.eureka.ip
@@ -42,12 +42,9 @@ pipeline {
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "Nexus URL: ${env.NEXUS_URL}"
-                    echo "DB URL: ${env.DB_URL}"
-                    echo "DB Host: ${env.DB_HOST}"
-                    echo "DB Port: ${env.DB_PORT}"
-                    echo "DB Name: ${env.DB_NAME}"
+                    echo "Service Name: ${env.SERVICE_NAME}"
                     echo "Service Port: ${env.SERVICE_PORT}"
+                    echo "DB URL: ${env.DB_URL}"
                     echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "Eureka Port: ${env.EUREKA_PORT}"
                     echo "=========================================="
@@ -65,7 +62,7 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
-                    // Use configured Eureka IP as fallback, but try to discover first
+                    // Try to discover Eureka IP from AWS
                     def discoveredEurekaIp = sh(script: """
                         aws ec2 describe-instances \
                             --filters "Name=tag:Name,Values=eureka*" "Name=instance-state-name,Values=running" \
@@ -109,7 +106,7 @@ pipeline {
                             amiId = amiProps.split('=')[1].trim()
                             echo "✅ Retrieved AMI from CI: ${amiId}"
                         } catch (Exception e) {
-                            echo "No AMI found in stash, checking AWS..."
+                            echo "No AMI found in stash"
                         }
                     }
                     
@@ -126,7 +123,7 @@ pipeline {
                     }
                     
                     if (!amiId || amiId == '') {
-                        error "No AMI ID found! Please provide AMI_ID parameter or ensure AMI exists."
+                        error "No AMI ID found!"
                     }
                     
                     env.AMI_ID = amiId
@@ -160,24 +157,22 @@ pipeline {
             }
         }
 
-       
         stage('Terraform Apply') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                dir('service2/terraform') {
+                dir('service1/terraform') {
                     sh """
                         terraform apply -auto-approve \
                             -var="ami_id=${env.AMI_ID}" \
                             -var="aws_region=${env.AWS_DEFAULT_REGION}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="db_url=${env.DB_URL}" \
-                            -var="db_username=${DB_USERNAME}" \
-                            -var="db_password=${DB_PASSWORD}"
+                            -var="db_username=${DB_CREDS_USR}" \
+                            -var="db_password=${DB_CREDS_PSW}"
                     """
                 }
             }
         }
-
 
         stage('Terraform Destroy') {
             when { expression { params.ACTION == 'destroy' } }
@@ -194,7 +189,6 @@ pipeline {
                 dir('service1/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw service1_public_ip", returnStdout: true).trim()
-                        def service_url = "http://${public_ip}:${env.SERVICE_PORT}"
                         
                         echo "=========================================="
                         echo "✅ Service1 Deployed Successfully!"
@@ -202,7 +196,7 @@ pipeline {
                         echo "AMI ID: ${env.AMI_ID}"
                         echo "Public IP: ${public_ip}"
                         echo "Service Port: ${env.SERVICE_PORT}"
-                        echo "Service URL: ${service_url}"
+                        echo "API URL: http://${public_ip}:${env.SERVICE_PORT}"
                         echo "Eureka URL: ${env.EUREKA_URL}"
                         echo "=========================================="
                     }
