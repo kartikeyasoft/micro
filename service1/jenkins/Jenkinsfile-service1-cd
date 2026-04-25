@@ -177,7 +177,14 @@ pipeline {
             when { expression { params.ACTION == 'destroy' } }
             steps {
                 dir('service1/terraform') {
-                    sh 'terraform destroy -auto-approve'
+                    // Pass dummy values for destroy since resources are being removed
+                    sh """
+                        terraform destroy -auto-approve \
+                            -var="db_username=dummy" \
+                            -var="db_password=dummy" \
+                            -var="eureka_url=http://dummy:8761/eureka/" \
+                            -var="db_url=jdbc:mysql://dummy:3306/dummy"
+                    """
                 }
             }
         }

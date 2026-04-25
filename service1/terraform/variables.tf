@@ -10,29 +10,27 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "eureka_url" {
-  description = "Eureka server URL"
-  type        = string
-  default     = "http://localhost:8761/eureka/"
-}
-
-variable "db_url" {
-  description = "Database URL"
-  type        = string
-  default     = "jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC"
-}
-
 variable "db_username" {
   description = "Database username"
   type        = string
+  default     = ""  # Add default for destroy operation
   sensitive   = true
 }
 
 variable "db_password" {
   description = "Database password"
   type        = string
+  default     = ""  # Add default for destroy operation
   sensitive   = true
 }
+
+# Also update eureka_url to have default
+variable "eureka_url" {
+  description = "Eureka server URL"
+  type        = string
+  default     = "http://localhost:8761/eureka/"
+}
+
 
 variable "environment" {
   description = "Environment name"
