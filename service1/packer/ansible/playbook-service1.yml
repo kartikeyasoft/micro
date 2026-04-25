@@ -168,6 +168,15 @@
         delay: 10
         timeout: 60
 
+    - name: Debug - Check database username
+      debug:
+        msg: "DB Username is: {{ db_username }}"
+
+    - name: Fail if DB username is null
+      fail:
+        msg: "DB_USERNAME is null! Please check Jenkins credentials."
+      when: db_username == 'null' or db_username == ''
+
     - name: Display service status
       debug:
         msg: |

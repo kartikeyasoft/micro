@@ -51,6 +51,10 @@ pipeline {
                     echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "Eureka Port: ${env.EUREKA_PORT}"
                     echo "=========================================="
+
+                    echo "DB Username loaded: ${env.DB_USERNAME_USR ? 'YES' : 'NO'}"
+                    echo "DB Password loaded: ${env.DB_PASSWORD ? 'YES' : 'NO'}"
+
                 }
             }
         }
@@ -140,7 +144,7 @@ pipeline {
                         "DB_HOST=${env.DB_HOST}",
                         "DB_PORT=${env.DB_PORT}",
                         "DB_NAME=${env.DB_NAME}",
-                        "DB_USERNAME=${env.DB_USERNAME_CREDS_USR}",
+                        "DB_USERNAME=${env.DB_USERNAME_USR}",
                         "DB_PASSWORD=${env.DB_PASSWORD}",
                         "EUREKA_IP=${env.EUREKA_IP}",
                         "EUREKA_PORT=${env.EUREKA_PORT}"
