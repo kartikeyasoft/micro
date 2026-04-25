@@ -13,8 +13,9 @@ pipeline {
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
         
-        // Database credentials - this creates DB_CREDS_USR and DB_CREDS_PSW
-        DB_CREDS = credentials('db-username')
+        // Database credentials
+        DB_USERNAME_CREDS = credentials('db-username')  // This creates DB_USERNAME_CREDS_USR and DB_USERNAME_CREDS_PSW
+        DB_PASSWORD = credentials('db-password')       // This creates DB_PASSWORD variable (secret text)
     }
 
     stages {
@@ -42,7 +43,6 @@ pipeline {
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "Service Name: ${env.SERVICE_NAME}"
                     echo "Service Port: ${env.SERVICE_PORT}"
                     echo "DB URL: ${env.DB_URL}"
                     echo "Eureka IP: ${env.EUREKA_IP}"
@@ -88,7 +88,6 @@ pipeline {
                     
                     env.EUREKA_URL = "http://${finalEurekaIp}:${env.EUREKA_PORT}/eureka/"
                     echo "✅ Eureka URL: ${env.EUREKA_URL}"
-                    echo "   Source: ${(finalEurekaIp == env.EUREKA_IP) ? 'Config fallback' : 'AWS Discovery'}"
                 }
             }
         }
@@ -167,8 +166,8 @@ pipeline {
                             -var="aws_region=${env.AWS_DEFAULT_REGION}" \
                             -var="eureka_url=${env.EUREKA_URL}" \
                             -var="db_url=${env.DB_URL}" \
-                            -var="db_username=${DB_CREDS_USR}" \
-                            -var="db_password=${DB_CREDS_PSW}"
+                            -var="db_username=${env.DB_USERNAME_CREDS_USR}" \
+                            -var="db_password=${env.DB_PASSWORD}"
                     """
                 }
             }
