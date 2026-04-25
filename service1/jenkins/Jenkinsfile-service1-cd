@@ -22,11 +22,19 @@ pipeline {
         stage('Load Configuration') {
             steps {
                 script {
-                    def awsCfg = awsConfig()
-                    def dbCfg = dbConfig()
+                    // Load configuration from shared library
+                    def config = envConfig()
                     
-                    env.AWS_DEFAULT_REGION = awsCfg.region
-                    env.DB_URL = dbCfg.url
+                    // Set environment variables from config
+                    env.AWS_DEFAULT_REGION = config.aws.region
+                    env.NEXUS_URL = config.nexus.url
+                    env.DB_URL = config.db.url
+                    env.DB_HOST = config.db.host
+                    env.DB_PORT = config.db.port
+                    env.DB_NAME = config.db.name
+                    env.SERVICE_PORT = config.services.service1.defaultPort
+                    env.EUREKA_PORT = config.eureka.defaultPort
+                    env.EUREKA_IP = config.eureka.ip
                     
                     echo "=========================================="
                     echo "Service1 CD Pipeline"
@@ -34,7 +42,14 @@ pipeline {
                     echo "Action: ${params.ACTION}"
                     echo "AMI ID: ${params.AMI_ID}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "DB URL: ${env.DB_URL}"  // ← Add this line
+                    echo "Nexus URL: ${env.NEXUS_URL}"
+                    echo "DB URL: ${env.DB_URL}"
+                    echo "DB Host: ${env.DB_HOST}"
+                    echo "DB Port: ${env.DB_PORT}"
+                    echo "DB Name: ${env.DB_NAME}"
+                    echo "Service Port: ${env.SERVICE_PORT}"
+                    echo "Eureka IP: ${env.EUREKA_IP}"
+                    echo "Eureka Port: ${env.EUREKA_PORT}"
                     echo "=========================================="
                 }
             }
@@ -50,8 +65,8 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 script {
-                    // Discover Eureka IP from AWS
-                    def eurekaIp = sh(script: """
+                    // Use configured Eureka IP as fallback, but try to discover first
+                    def discoveredEurekaIp = sh(script: """
                         aws ec2 describe-instances \
                             --filters "Name=tag:Name,Values=eureka*" "Name=instance-state-name,Values=running" \
                             --query 'Reservations[0].Instances[0].PrivateIpAddress' \
@@ -60,8 +75,8 @@ pipeline {
                     """, returnStdout: true).trim()
                     
                     // Fallback to Parameter Store
-                    if (!eurekaIp || eurekaIp == 'None') {
-                        eurekaIp = sh(script: """
+                    if (!discoveredEurekaIp || discoveredEurekaIp == 'None') {
+                        discoveredEurekaIp = sh(script: """
                             aws ssm get-parameter \
                                 --name "/exam/eureka/ip" \
                                 --query 'Parameter.Value' \
@@ -69,12 +84,14 @@ pipeline {
                         """, returnStdout: true).trim()
                     }
                     
-                    if (!eurekaIp || eurekaIp == '') {
-                        error "Could not discover Eureka IP. Please ensure Eureka is running."
-                    }
+                    // Use discovered IP or fallback to configured IP
+                    def finalEurekaIp = (discoveredEurekaIp && discoveredEurekaIp != 'None' && discoveredEurekaIp != '') 
+                        ? discoveredEurekaIp 
+                        : env.EUREKA_IP
                     
-                    env.EUREKA_URL = "http://${eurekaIp}:8761/eureka/"
-                    echo "✅ Auto-discovered Eureka at: ${env.EUREKA_URL}"
+                    env.EUREKA_URL = "http://${finalEurekaIp}:${env.EUREKA_PORT}/eureka/"
+                    echo "✅ Eureka URL: ${env.EUREKA_URL}"
+                    echo "   Source: ${(finalEurekaIp == env.EUREKA_IP) ? 'Config fallback' : 'AWS Discovery'}"
                 }
             }
         }
@@ -92,7 +109,7 @@ pipeline {
                             amiId = amiProps.split('=')[1].trim()
                             echo "✅ Retrieved AMI from CI: ${amiId}"
                         } catch (Exception e) {
-                            echo "No AMI found in stash"
+                            echo "No AMI found in stash, checking AWS..."
                         }
                     }
                     
@@ -109,7 +126,7 @@ pipeline {
                     }
                     
                     if (!amiId || amiId == '') {
-                        error "No AMI ID found!"
+                        error "No AMI ID found! Please provide AMI_ID parameter or ensure AMI exists."
                     }
                     
                     env.AMI_ID = amiId
@@ -129,6 +146,8 @@ pipeline {
                         error "EUREKA_URL is required for apply action"
                     }
                     echo "✅ Validation passed"
+                    echo "   AMI ID: ${env.AMI_ID}"
+                    echo "   Eureka URL: ${env.EUREKA_URL}"
                 }
             }
         }
@@ -145,15 +164,21 @@ pipeline {
             when { expression { params.ACTION == 'apply' } }
             steps {
                 dir('service1/terraform') {
-                    sh """
-                        terraform apply -auto-approve \
-                            -var="ami_id=${env.AMI_ID}" \
-                            -var="aws_region=${env.AWS_DEFAULT_REGION}" \
-                            -var="eureka_url=${env.EUREKA_URL}" \
-                            -var="db_url=${env.DB_URL}" \
-                            -var="db_username=${DB_USERNAME}" \
-                            -var="db_password=${DB_PASSWORD}"
-                    """
+                    withCredentials([
+                        string(credentialsId: 'db-username', variable: 'TF_VAR_db_username'),
+                        string(credentialsId: 'db-password', variable: 'TF_VAR_db_password')
+                    ]) {
+                        sh """
+                            terraform apply -auto-approve \
+                                -var="ami_id=${env.AMI_ID}" \
+                                -var="aws_region=${env.AWS_DEFAULT_REGION}" \
+                                -var="eureka_url=${env.EUREKA_URL}" \
+                                -var="db_url=${env.DB_URL}" \
+                                -var="db_username=${TF_VAR_db_username}" \
+                                -var="db_password=${TF_VAR_db_password}" \
+                                -var="service_port=${env.SERVICE_PORT}"
+                        """
+                    }
                 }
             }
         }
@@ -173,13 +198,16 @@ pipeline {
                 dir('service1/terraform') {
                     script {
                         def public_ip = sh(script: "terraform output -raw service1_public_ip", returnStdout: true).trim()
+                        def service_url = "http://${public_ip}:${env.SERVICE_PORT}"
                         
                         echo "=========================================="
                         echo "✅ Service1 Deployed Successfully!"
                         echo "=========================================="
                         echo "AMI ID: ${env.AMI_ID}"
                         echo "Public IP: ${public_ip}"
-                        echo "API URL: http://${public_ip}:9001"
+                        echo "Service Port: ${env.SERVICE_PORT}"
+                        echo "Service URL: ${service_url}"
+                        echo "Eureka URL: ${env.EUREKA_URL}"
                         echo "=========================================="
                     }
                 }
@@ -193,6 +221,9 @@ pipeline {
         }
         failure {
             echo "❌ Service1 ${params.ACTION} failed!"
+            script {
+                echo "Check the logs above for detailed error information"
+            }
         }
     }
 }
