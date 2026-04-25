@@ -12,7 +12,6 @@ pipeline {
         // AWS Credentials from Jenkins
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        // AWS_DEFAULT_REGION will be set in Load Configuration stage
     }
 
     stages {
@@ -172,8 +171,8 @@ pipeline {
         stage('Output') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                dir('eureka/terraform') {
-                    script {
+                script {
+                    dir('eureka/terraform') {
                         def public_ip = sh(script: "terraform output -raw eureka_public_ip", returnStdout: true).trim()
                         def private_ip = sh(script: "terraform output -raw eureka_private_ip", returnStdout: true).trim()
                         
@@ -195,9 +194,11 @@ pipeline {
 
     post {
         success {
-            echo "✅ Eureka ${params.ACTION} completed successfully!"
-            if (params.ACTION == 'apply') {
-                echo "🎯 Other services can now discover Eureka at: /exam/eureka/ip and /exam/eureka/port"
+            script {
+                echo "✅ Eureka ${params.ACTION} completed successfully!"
+                if (params.ACTION == 'apply') {
+                    echo "🎯 Other services can now discover Eureka at: /exam/eureka/ip and /exam/eureka/port"
+                }
             }
         }
         failure {
