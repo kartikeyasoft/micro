@@ -22,6 +22,12 @@ variable "instance_type" {
   default     = "t3.micro"
 }
 
+variable "eureka_port" {
+  description = "Port for Eureka server"
+  type        = number
+  default     = 8761
+}
+
 variable "subnet_id" {
   description = "Subnet ID for the instance"
   type        = string
