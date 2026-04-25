@@ -160,30 +160,24 @@ pipeline {
             }
         }
 
-       stage('Terraform Apply') {
+       
+        stage('Terraform Apply') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                script {
-                    dir('service1/terraform') {
-                        withCredentials([
-                            usernamePassword(credentialsId: 'db-username', 
-                                            usernameVariable: 'TF_DB_USERNAME', 
-                                            passwordVariable: 'TF_DB_PASSWORD')
-                        ]) {
-                            sh """
-                                terraform apply -auto-approve \
-                                    -var="ami_id=${env.AMI_ID}" \
-                                    -var="aws_region=${env.AWS_DEFAULT_REGION}" \
-                                    -var="eureka_url=${env.EUREKA_URL}" \
-                                    -var="db_url=${env.DB_URL}" \
-                                    -var="db_username=${TF_DB_USERNAME}" \
-                                    -var="db_password=${TF_DB_PASSWORD}"
-                            """
-                        }
-                    }
+                dir('service2/terraform') {
+                    sh """
+                        terraform apply -auto-approve \
+                            -var="ami_id=${env.AMI_ID}" \
+                            -var="aws_region=${env.AWS_DEFAULT_REGION}" \
+                            -var="eureka_url=${env.EUREKA_URL}" \
+                            -var="db_url=${env.DB_URL}" \
+                            -var="db_username=${DB_USERNAME}" \
+                            -var="db_password=${DB_PASSWORD}"
+                    """
                 }
             }
         }
+
 
         stage('Terraform Destroy') {
             when { expression { params.ACTION == 'destroy' } }
