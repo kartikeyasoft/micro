@@ -29,6 +29,11 @@
         update_cache: yes
         force: yes
 
+    - name: Install MySQL client for debugging
+      apt:
+        name: mysql-client
+        state: present
+
     - name: Create service1 user
       user:
         name: "{{ app_user }}"
@@ -59,6 +64,11 @@
           spring.datasource.password={{ db_password }}
           spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
           
+          # HikariCP Connection Pool Settings
+          spring.datasource.hikari.connection-timeout=60000
+          spring.datasource.hikari.maximum-pool-size=10
+          spring.datasource.hikari.minimum-idle=2
+          
           # JPA Configuration
           spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
           spring.jpa.hibernate.ddl-auto=update
@@ -72,9 +82,16 @@
           # Eureka Configuration
           eureka.client.service-url.defaultZone=http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
           eureka.instance.prefer-ip-address=true
+          eureka.instance.lease-renewal-interval-in-seconds=30
+          eureka.instance.lease-expiration-duration-in-seconds=90
+          
+          # Actuator endpoints (for health checks)
+          management.endpoints.web.exposure.include=health,info
+          management.endpoint.health.show-details=always
           
           # Logging
           logging.level.com.codingworld.service1=INFO
+          logging.level.org.hibernate.SQL=DEBUG
         dest: "/opt/{{ app_name }}/application.properties"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
@@ -90,6 +107,18 @@
         timeout: 120
       retries: 5
       delay: 10
+      register: download_result
+      until: download_result is success
+
+    - name: Verify JAR file was downloaded
+      stat:
+        path: "/opt/{{ app_name }}/{{ app_name }}.jar"
+      register: jar_file
+
+    - name: Fail if JAR not downloaded
+      fail:
+        msg: "JAR file was not downloaded successfully from Nexus"
+      when: not jar_file.stat.exists or jar_file.stat.size == 0
 
     - name: Create systemd service file
       copy:
@@ -97,25 +126,56 @@
           [Unit]
           Description=Service1 - Quiz Application Backend
           After=network.target
+          Wants=network.target
           
           [Service]
           User={{ app_user }}
+          Group={{ app_user }}
           WorkingDirectory=/opt/{{ app_name }}
           ExecStart=/usr/bin/java -jar /opt/{{ app_name }}/{{ app_name }}.jar
           SuccessExitStatus=143
           Restart=always
           RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+          
+          # Security settings
+          NoNewPrivileges=true
+          PrivateTmp=true
           
           [Install]
           WantedBy=multi-user.target
         dest: "/etc/systemd/system/{{ app_name }}.service"
+        mode: "0644"
 
     - name: Reload systemd
       systemd:
         daemon_reload: yes
 
-    - name: Enable and start service
+    - name: Enable service
       systemd:
         name: "{{ app_name }}"
         enabled: yes
+
+    - name: Start service
+      systemd:
+        name: "{{ app_name }}"
         state: started
+
+    - name: Wait for service to start
+      wait_for:
+        port: "{{ service_port }}"
+        delay: 10
+        timeout: 60
+
+    - name: Display service status
+      debug:
+        msg: |
+          ========================================
+          Service1 Deployment Complete!
+          ========================================
+          Service Name: {{ app_name }}
+          Service Port: {{ service_port }}
+          Database Host: {{ db_host }}
+          Eureka URL: http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
+          ========================================
