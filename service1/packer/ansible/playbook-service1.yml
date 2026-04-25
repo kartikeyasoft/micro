@@ -7,14 +7,14 @@
     app_name: "service1"
     app_version: "{{ lookup('env', 'SERVICE_VERSION') }}"
     nexus_url: "{{ lookup('env', 'NEXUS_URL') }}"
-    service_port: "{{ lookup('env', 'SERVICE_PORT') }}"
+    service_port: "{{ lookup('env', 'SERVICE_PORT') | default('9001') }}"
     db_host: "{{ lookup('env', 'DB_HOST') }}"
-    db_port: "{{ lookup('env', 'DB_PORT') }}"
+    db_port: "{{ lookup('env', 'DB_PORT') | default('3306') }}"
     db_name: "{{ lookup('env', 'DB_NAME') }}"
     db_username: "{{ lookup('env', 'DB_USERNAME') }}"
     db_password: "{{ lookup('env', 'DB_PASSWORD') }}"
     eureka_ip: "{{ lookup('env', 'EUREKA_IP') }}"
-    eureka_port: "{{ lookup('env', 'EUREKA_PORT') }}"
+    eureka_port: "{{ lookup('env', 'EUREKA_PORT') | default('8761') }}"
 
   tasks:
     - name: Update apt cache
@@ -44,9 +44,37 @@
         group: "{{ app_user }}"
         mode: "0755"
 
-    - name: Create application.properties from template
-      template:
-        src: application.properties.j2
+    - name: Create application.properties with dynamic values
+      copy:
+        content: |
+          # Server Configuration
+          server.port={{ service_port }}
+          
+          # Application Name
+          spring.application.name={{ app_name }}
+          
+          # Database Configuration
+          spring.datasource.url=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
+          spring.datasource.username={{ db_username }}
+          spring.datasource.password={{ db_password }}
+          spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+          
+          # JPA Configuration
+          spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
+          spring.jpa.hibernate.ddl-auto=update
+          spring.jpa.show-sql=true
+          spring.jpa.properties.hibernate.format_sql=true
+          
+          # File Upload Configuration
+          spring.servlet.multipart.max-file-size=5MB
+          spring.servlet.multipart.max-request-size=5MB
+          
+          # Eureka Configuration
+          eureka.client.service-url.defaultZone=http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
+          eureka.instance.prefer-ip-address=true
+          
+          # Logging
+          logging.level.com.codingworld.service1=INFO
         dest: "/opt/{{ app_name }}/application.properties"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
@@ -63,9 +91,23 @@
       retries: 5
       delay: 10
 
-    - name: Create systemd service file with environment variables
-      template:
-        src: service1.service.j2
+    - name: Create systemd service file
+      copy:
+        content: |
+          [Unit]
+          Description=Service1 - Quiz Application Backend
+          After=network.target
+          
+          [Service]
+          User={{ app_user }}
+          WorkingDirectory=/opt/{{ app_name }}
+          ExecStart=/usr/bin/java -jar /opt/{{ app_name }}/{{ app_name }}.jar
+          SuccessExitStatus=143
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
         dest: "/etc/systemd/system/{{ app_name }}.service"
 
     - name: Reload systemd
