@@ -160,26 +160,26 @@ pipeline {
             }
         }
 
-        stage('Terraform Apply') {
+       stage('Terraform Apply') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                dir('service1/terraform') {
-                    withCredentials([
-                        usernamePassword(credentialsId: 'db-username', 
-                                        usernameVariable: 'DB_USER', 
-                                        passwordVariable: 'DB_PASS'),
-                        string(credentialsId: 'db-password', 
-                            variable: 'DB_PASS_STRING')  // If you have a string credential
-                    ]) {
-                        sh """
-                            terraform apply -auto-approve \
-                                -var="ami_id=${env.AMI_ID}" \
-                                -var="aws_region=${env.AWS_DEFAULT_REGION}" \
-                                -var="eureka_url=${env.EUREKA_URL}" \
-                                -var="db_url=${env.DB_URL}" \
-                                -var="db_username=${DB_USER}" \
-                                -var="db_password=${DB_PASS}"
-                        """
+                script {
+                    dir('service1/terraform') {
+                        withCredentials([
+                            usernamePassword(credentialsId: 'db-username', 
+                                            usernameVariable: 'TF_DB_USERNAME', 
+                                            passwordVariable: 'TF_DB_PASSWORD')
+                        ]) {
+                            sh """
+                                terraform apply -auto-approve \
+                                    -var="ami_id=${env.AMI_ID}" \
+                                    -var="aws_region=${env.AWS_DEFAULT_REGION}" \
+                                    -var="eureka_url=${env.EUREKA_URL}" \
+                                    -var="db_url=${env.DB_URL}" \
+                                    -var="db_username=${TF_DB_USERNAME}" \
+                                    -var="db_password=${TF_DB_PASSWORD}"
+                            """
+                        }
                     }
                 }
             }
