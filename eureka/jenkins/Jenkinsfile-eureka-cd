@@ -25,6 +25,7 @@ pipeline {
                     env.AWS_DEFAULT_REGION = config.aws.region
                     env.EUREKA_PORT = config.eureka.defaultPort
                     env.NEXUS_URL = config.nexus.url
+                    env.EUREKA_IP = config.eureka.ip  // Added for fallback
                     
                     echo "=========================================="
                     echo "Eureka CD Pipeline"
@@ -118,33 +119,53 @@ pipeline {
             steps {
                 script {
                     dir('eureka/terraform') {
-                        def private_ip = sh(script: "terraform output -raw eureka_private_ip", returnStdout: true).trim()
+                        // Check if terraform output exists
+                        def private_ip = ""
+                        try {
+                            private_ip = sh(script: "terraform output -raw eureka_private_ip", returnStdout: true).trim()
+                            echo "✅ Retrieved Eureka private IP: ${private_ip}"
+                        } catch (Exception e) {
+                            echo "⚠️ Could not get eureka_private_ip from terraform output"
+                            // Try to get from AWS as fallback
+                            private_ip = sh(script: """
+                                aws ec2 describe-instances \
+                                    --filters "Name=tag:Name,Values=eureka*" "Name=instance-state-name,Values=running" \
+                                    --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+                                    --region ${env.AWS_DEFAULT_REGION} \
+                                    --output text
+                            """, returnStdout: true).trim()
+                            echo "⚠️ Using discovered Eureka IP: ${private_ip}"
+                        }
                         
-                        // Store in AWS Parameter Store for other services to discover
-                        sh """
-                            aws ssm put-parameter \
-                                --name "/exam/eureka/ip" \
-                                --value "${private_ip}" \
-                                --type "String" \
-                                --overwrite
-                        """
-                        
-                        // Also store the port
-                        sh """
-                            aws ssm put-parameter \
-                                --name "/exam/eureka/port" \
-                                --value "${env.EUREKA_PORT}" \
-                                --type "String" \
-                                --overwrite
-                        """
-                        
-                        echo "=========================================="
-                        echo "✅ Eureka Registration Info Stored"
-                        echo "=========================================="
-                        echo "Eureka IP: ${private_ip}"
-                        echo "Eureka Port: ${env.EUREKA_PORT}"
-                        echo "Eureka URL: http://${private_ip}:${env.EUREKA_PORT}/eureka/"
-                        echo "=========================================="
+                        if (private_ip && private_ip != 'None' && private_ip != '') {
+                            // Store in AWS Parameter Store for other services to discover
+                            sh """
+                                aws ssm put-parameter \
+                                    --name "/exam/eureka/ip" \
+                                    --value "${private_ip}" \
+                                    --type "String" \
+                                    --overwrite
+                            """
+                            
+                            // Also store the port
+                            sh """
+                                aws ssm put-parameter \
+                                    --name "/exam/eureka/port" \
+                                    --value "${env.EUREKA_PORT}" \
+                                    --type "String" \
+                                    --overwrite
+                            """
+                            
+                            echo "=========================================="
+                            echo "✅ Eureka Registration Info Stored"
+                            echo "=========================================="
+                            echo "Eureka IP: ${private_ip}"
+                            echo "Eureka Port: ${env.EUREKA_PORT}"
+                            echo "Eureka URL: http://${private_ip}:${env.EUREKA_PORT}/eureka/"
+                            echo "=========================================="
+                        } else {
+                            echo "⚠️ Could not determine Eureka IP, skipping Parameter Store update"
+                        }
                     }
                 }
             }
@@ -173,8 +194,20 @@ pipeline {
             steps {
                 script {
                     dir('eureka/terraform') {
-                        def public_ip = sh(script: "terraform output -raw eureka_public_ip", returnStdout: true).trim()
-                        def private_ip = sh(script: "terraform output -raw eureka_private_ip", returnStdout: true).trim()
+                        def public_ip = ""
+                        def private_ip = ""
+                        
+                        try {
+                            public_ip = sh(script: "terraform output -raw eureka_public_ip", returnStdout: true).trim()
+                        } catch (Exception e) {
+                            public_ip = "Unknown (output not found)"
+                        }
+                        
+                        try {
+                            private_ip = sh(script: "terraform output -raw eureka_private_ip", returnStdout: true).trim()
+                        } catch (Exception e) {
+                            private_ip = "Unknown (output not found)"
+                        }
                         
                         echo "=========================================="
                         echo "✅ Eureka Deployed Successfully!"
@@ -186,6 +219,10 @@ pipeline {
                         echo "Dashboard: http://${public_ip}:${env.EUREKA_PORT}"
                         echo "Service URL: http://${private_ip}:${env.EUREKA_PORT}/eureka/"
                         echo "=========================================="
+                        
+                        // Also store AWS CLI commands for debugging
+                        echo "To check Eureka registration from other services:"
+                        echo "aws ssm get-parameter --name /exam/eureka/ip --query Parameter.Value --output text"
                     }
                 }
             }
