@@ -31,13 +31,18 @@ pipeline {
         stage('Load Configuration') {
             steps {
                 script {
-                    def envCfg = envConfig()
-                    def dbCfg = dbConfig()
+                    // Load all configurations from single envConfig file
+                    def config = envConfig()
                     
                     // Set environment variables
-                    env.NEXUS_URL = envCfg.nexus.url
-                    env.AWS_DEFAULT_REGION = envCfg.aws.region
-                    env.DB_URL = dbCfg.url
+                    env.NEXUS_URL = config.nexus.url
+                    env.AWS_DEFAULT_REGION = config.aws.region
+                    env.DB_URL = config.db.url
+                    env.DB_HOST = config.db.host
+                    env.DB_PORT = config.db.port
+                    env.DB_NAME = config.db.name
+                    env.SERVICE_PORT = config.services.service1.defaultPort
+                    env.EUREKA_PORT = config.eureka.defaultPort
                     
                     echo "=========================================="
                     echo "Service1 CI Pipeline"
@@ -46,7 +51,9 @@ pipeline {
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "DB URL: ${env.DB_URL}"
                     echo "Service: ${env.SERVICE_NAME}"
+                    echo "Service Port: ${env.SERVICE_PORT}"
                     echo "Eureka IP: ${env.EUREKA_IP}"
+                    echo "Eureka Port: ${env.EUREKA_PORT}"
                     echo "=========================================="
                 }
             }
@@ -154,36 +161,7 @@ pipeline {
                 }
             }
         }
-        // stage('Trigger CD Pipeline') {
-        //     steps {
-        //         script {
-        //             echo "=========================================="
-        //             echo "Triggering CD Pipeline"
-        //             echo "=========================================="
-        //             echo "Version: ${env.SERVICE_VERSION}"
-        //             echo "AMI ID: ${env.AMI_ID}"
-        //             echo "=========================================="
-                    
-        //             if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
-        //                 echo "✅ Valid AMI ID, triggering CD pipeline..."
-                        
-        //                 // Pass ACTION as string (not choice)
-        //                 build job: 'service1-cd',
-        //                     parameters: [
-        //                         string(name: 'AMI_ID', value: env.AMI_ID),
-        //                         string(name: 'ACTION', value: 'apply')
-        //                     ],
-        //                     wait: false
-                        
-        //                 echo "✅ CD pipeline triggered successfully!"
-        //             } else {
-        //                 echo "⚠️ No valid AMI ID captured, skipping CD trigger"
-        //             }
-        //         }
-        //     }
-        // }
-
-        }
+    }
 
     post {
         success {
@@ -191,7 +169,6 @@ pipeline {
         }
         failure {
             echo "❌ Service1 CI failed!"
-            // Print the actual error
             script {
                 echo "Current build result: ${currentBuild.currentResult}"
             }
