@@ -130,21 +130,6 @@ pipeline {
         }
 
 
-        stage('Deploy to Nexus') {
-            steps {
-                dir('service1') {
-                    script {
-                        def jarFile = "target/service1-${env.SERVICE_VERSION}.jar"
-                        def nexusPath = "${env.NEXUS_URL}/com/ksapp/service1/${env.SERVICE_VERSION}/service1-${env.SERVICE_VERSION}.jar"
-                        
-                        sh """
-                            curl -f -u ${NEXUS_CREDS_USR}:${NEXUS_CREDS_PSW} --upload-file ${jarFile} ${nexusPath}
-                        """
-                    }
-                }
-            }
-        }
-
         stage('Bake Golden Image') {
             steps {
                 script {
