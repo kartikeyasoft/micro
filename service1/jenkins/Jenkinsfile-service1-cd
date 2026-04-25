@@ -165,8 +165,11 @@ pipeline {
             steps {
                 dir('service1/terraform') {
                     withCredentials([
-                        string(credentialsId: 'db-username', variable: 'TF_VAR_db_username'),
-                        string(credentialsId: 'db-password', variable: 'TF_VAR_db_password')
+                        usernamePassword(credentialsId: 'db-username', 
+                                        usernameVariable: 'DB_USER', 
+                                        passwordVariable: 'DB_PASS'),
+                        string(credentialsId: 'db-password', 
+                            variable: 'DB_PASS_STRING')  // If you have a string credential
                     ]) {
                         sh """
                             terraform apply -auto-approve \
@@ -174,9 +177,8 @@ pipeline {
                                 -var="aws_region=${env.AWS_DEFAULT_REGION}" \
                                 -var="eureka_url=${env.EUREKA_URL}" \
                                 -var="db_url=${env.DB_URL}" \
-                                -var="db_username=${TF_VAR_db_username}" \
-                                -var="db_password=${TF_VAR_db_password}" \
-                                -var="service_port=${env.SERVICE_PORT}"
+                                -var="db_username=${DB_USER}" \
+                                -var="db_password=${DB_PASS}"
                         """
                     }
                 }
