@@ -129,21 +129,37 @@ pipeline {
             }
         }
 
-        stage('Bake Golden Image') {
+       stage('Bake Golden Image') {
             steps {
                 script {
                     withEnv([
                         "SERVICE_VERSION=${env.SERVICE_VERSION}",
                         "SERVICE_NAME=${env.SERVICE_NAME}",
-                        "NEXUS_URL=${env.NEXUS_URL}"
+                        "SERVICE_PORT=${env.SERVICE_PORT}",
+                        "NEXUS_URL=${env.NEXUS_URL}",
+                        "DB_HOST=${env.DB_HOST}",
+                        "DB_PORT=${env.DB_PORT}",
+                        "DB_NAME=${env.DB_NAME}",
+                        "DB_USERNAME=${env.DB_USERNAME_CREDS_USR}",
+                        "DB_PASSWORD=${env.DB_PASSWORD}",
+                        "EUREKA_IP=${env.EUREKA_IP}",
+                        "EUREKA_PORT=${env.EUREKA_PORT}"
                     ]) {
                         dir('service1/packer') {
                             sh '''
                                 packer init service1.pkr.hcl
                                 packer build \
-                                    -var "service_version=${SERVICE_VERSION}" \
                                     -var "service_name=${SERVICE_NAME}" \
+                                    -var "service_version=${SERVICE_VERSION}" \
+                                    -var "service_port=${SERVICE_PORT}" \
                                     -var "nexus_url=${NEXUS_URL}" \
+                                    -var "db_host=${DB_HOST}" \
+                                    -var "db_port=${DB_PORT}" \
+                                    -var "db_name=${DB_NAME}" \
+                                    -var "db_username=${DB_USERNAME}" \
+                                    -var "db_password=${DB_PASSWORD}" \
+                                    -var "eureka_ip=${EUREKA_IP}" \
+                                    -var "eureka_port=${EUREKA_PORT}" \
                                     service1.pkr.hcl 2>&1 | tee build-output.txt
                                 
                                 AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
@@ -162,7 +178,6 @@ pipeline {
                 }
             }
         }
-
 
         
         
