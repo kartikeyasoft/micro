@@ -67,7 +67,8 @@ resource "aws_instance" "service1" {
   vpc_security_group_ids = [aws_security_group.service1.id]
   key_name               = var.key_name
 
-  user_data = <<-EOF
+  # Only create environment file if variables are provided (not during destroy preview)
+  user_data = var.eureka_url != "" ? <<-EOF
     #!/bin/bash
     # Create environment file with correct Eureka URL
     cat > /opt/service1/service1.env << 'ENVEOF'
@@ -79,10 +80,20 @@ resource "aws_instance" "service1" {
     DB_PASSWORD=${var.db_password}
     ENVEOF
     
-    chown service1:service1 /opt/service1/service1.env
-    chmod 600 /opt/service1/service1.env
+    chown service1:service1 /opt/service1/service1.env 2>/dev/null || true
+    chmod 600 /opt/service1/service1.env 2>/dev/null || true
+    
+    # Create systemd override
+    mkdir -p /etc/systemd/system/service1.service.d
+    cat > /etc/systemd/system/service1.service.d/override.conf << 'SYSTEMDEOF'
+    [Service]
+    EnvironmentFile=/opt/service1/service1.env
+    SYSTEMDEOF
+    
+    systemctl daemon-reload
     systemctl restart service1
-  EOF
+    echo "Service1 configured with Eureka URL: ${var.eureka_url}"
+  EOF : ""
 
   tags = {
     Name        = "service1-${var.environment}"
