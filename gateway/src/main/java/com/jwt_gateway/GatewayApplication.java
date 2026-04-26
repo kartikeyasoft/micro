@@ -34,7 +34,6 @@ public class GatewayApplication
 //
 //
 //			System.out.println("starting code");
-////
 //			UserData user = new UserData();
 //
 //			user.setFirstName("Santhosh");

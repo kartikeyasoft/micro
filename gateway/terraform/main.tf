@@ -70,37 +70,34 @@ resource "aws_instance" "gateway" {
   vpc_security_group_ids = [aws_security_group.gateway.id]
   key_name               = var.key_name
 
-  user_data = <<-EOF
-    #!/bin/bash
-    # Create environment file with Eureka URL from SSM
-    cat > /opt/gateway/gateway.env << 'ENVEOF'
-    EUREKA_URL=${var.eureka_url}
-    SERVER_PORT=8080
-    SPRING_APP_NAME=gateway
-    EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
-    EUREKA_CLIENT_FETCH_REGISTRY=true
-    EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
-    ENVEOF
-    
-    # Set proper permissions
-    chown gateway:gateway /opt/gateway/gateway.env 2>/dev/null || true
-    chmod 600 /opt/gateway/gateway.env 2>/dev/null || true
-    
-    # Create systemd override directory
-    mkdir -p /etc/systemd/system/gateway.service.d
-    
-    # Create override config to load environment file
-    cat > /etc/systemd/system/gateway.service.d/override.conf << 'SYSTEMDEOF'
-    [Service]
-    EnvironmentFile=/opt/gateway/gateway.env
-    SYSTEMDEOF
-    
-    # Reload systemd and restart service
-    systemctl daemon-reload
-    systemctl restart gateway
-    
-    echo "Gateway configured with Eureka URL: ${var.eureka_url}"
-  EOF
+user_data = <<-EOF
+  #!/bin/bash
+  # Create environment file
+  cat > /opt/gateway/gateway.env << 'ENVEOF'
+  EUREKA_URL=http://${var.eureka_url}
+  SERVER_PORT=8080
+  SPRING_APP_NAME=gateway
+  EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
+  EUREKA_CLIENT_FETCH_REGISTRY=true
+  EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+  ENVEOF
+  
+  # Also add to /etc/environment for system-wide availability
+  echo "EUREKA_URL=http://${var.eureka_url}" >> /etc/environment
+  
+  chown gateway:gateway /opt/gateway/gateway.env
+  chmod 600 /opt/gateway/gateway.env
+  
+  # Create systemd override
+  mkdir -p /etc/systemd/system/gateway.service.d
+  cat > /etc/systemd/system/gateway.service.d/override.conf << 'SYSTEMDEOF'
+  [Service]
+  EnvironmentFile=/opt/gateway/gateway.env
+  SYSTEMDEOF
+  
+  systemctl daemon-reload
+  systemctl restart gateway
+EOF
 
   tags = {
     Name        = "gateway-${var.environment}"
