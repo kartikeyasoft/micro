@@ -70,7 +70,7 @@ resource "aws_instance" "service1" {
   vpc_security_group_ids = [aws_security_group.service1.id]
   key_name               = var.key_name
 
-  user_data = var.eureka_url != "" ? <<-EOF : null
+  user_data = <<-EOF
     #!/bin/bash
     # Replace PLACEHOLDER with actual Eureka URL
     sed -i 's|PLACEHOLDER|${var.eureka_url}|g' /opt/service1/service1.env
@@ -89,4 +89,20 @@ resource "aws_instance" "service1" {
   lifecycle {
     create_before_destroy = true
   }
+}
+
+# Outputs
+output "service1_public_ip" {
+  description = "Public IP of Service1 instance"
+  value       = aws_instance.service1.public_ip
+}
+
+output "service1_private_ip" {
+  description = "Private IP of Service1 instance"
+  value       = aws_instance.service1.private_ip
+}
+
+output "service1_security_group_id" {
+  description = "Security group ID"
+  value       = aws_security_group.service1.id
 }
