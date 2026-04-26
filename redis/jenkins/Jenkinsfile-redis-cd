@@ -64,44 +64,6 @@ pipeline {
             }
         }
 
-        stage('Store Redis IP in SSM') {
-            when { expression { params.ACTION == 'apply' } }
-            steps {
-                script {
-                    dir('redis/terraform') {
-                        // Get the Redis instance private IP after deployment
-                        def privateIp = sh(script: "terraform output -raw redis_private_ip", returnStdout: true).trim()
-                        
-                        // Store in AWS Parameter Store for other services to discover
-                        sh """
-                            aws ssm put-parameter \
-                                --name "/exam/redis/ip" \
-                                --value "${privateIp}" \
-                                --type "String" \
-                                --overwrite
-                        """
-                        
-                        // Also store the port
-                        sh """
-                            aws ssm put-parameter \
-                                --name "/exam/redis/port" \
-                                --value "${env.SERVICE_PORT}" \
-                                --type "String" \
-                                --overwrite
-                        """
-                        
-                        echo "=========================================="
-                        echo "✅ Redis Registration Info Stored"
-                        echo "=========================================="
-                        echo "Redis IP: ${privateIp}"
-                        echo "Redis Port: ${env.SERVICE_PORT}"
-                        echo "Redis URL: http://${privateIp}:${env.SERVICE_PORT}/redis"
-                        echo "=========================================="
-                    }
-                }
-            }
-        }
-
         stage('Get AMI ID') {
             when { expression { params.ACTION == 'apply' } }
             steps {
@@ -181,11 +143,45 @@ pipeline {
             }
         }
 
+        stage('Store Redis IP in SSM') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                script {
+                    dir('redis/terraform') {
+                        def privateIp = sh(script: "terraform output -raw redis_private_ip", returnStdout: true).trim()
+                        
+                        sh """
+                            aws ssm put-parameter \
+                                --name "/exam/redis/ip" \
+                                --value "${privateIp}" \
+                                --type "String" \
+                                --overwrite
+                        """
+                        
+                        sh """
+                            aws ssm put-parameter \
+                                --name "/exam/redis/port" \
+                                --value "${env.SERVICE_PORT}" \
+                                --type "String" \
+                                --overwrite
+                        """
+                        
+                        echo "=========================================="
+                        echo "✅ Redis Registration Info Stored"
+                        echo "=========================================="
+                        echo "Redis IP: ${privateIp}"
+                        echo "Redis Port: ${env.SERVICE_PORT}"
+                        echo "Redis URL: http://${privateIp}:${env.SERVICE_PORT}/redis"
+                        echo "=========================================="
+                    }
+                }
+            }
+        }
+
         stage('Terraform Destroy') {
             when { expression { params.ACTION == 'destroy' } }
             steps {
                 script {
-                    // Clean up Parameter Store entries on destroy
                     sh """
                         aws ssm delete-parameter \
                             --name "/exam/redis/ip" 2>/dev/null || true
@@ -202,8 +198,8 @@ pipeline {
         stage('Output') {
             when { expression { params.ACTION == 'apply' } }
             steps {
-                dir('redis/terraform') {
-                    script {
+                script {
+                    dir('redis/terraform') {
                         def public_ip = sh(script: "terraform output -raw redis_public_ip", returnStdout: true).trim()
                         def private_ip = sh(script: "terraform output -raw redis_private_ip", returnStdout: true).trim()
                         
@@ -226,9 +222,11 @@ pipeline {
 
     post {
         success {
-            echo "✅ Redis ${params.ACTION} completed successfully!"
-            if (params.ACTION == 'apply') {
-                echo "🎯 Other services can now discover Redis at: /exam/redis/ip and /exam/redis/port"
+            script {
+                echo "✅ Redis ${params.ACTION} completed successfully!"
+                if (params.ACTION == 'apply') {
+                    echo "🎯 Other services can now discover Redis at: /exam/redis/ip and /exam/redis/port"
+                }
             }
         }
         failure {
