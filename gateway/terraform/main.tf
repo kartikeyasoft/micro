@@ -74,7 +74,7 @@ user_data = <<-EOF
   #!/bin/bash
   # Create environment file
   cat > /opt/gateway/gateway.env << 'ENVEOF'
-  EUREKA_URL=http://${var.eureka_url}
+  EUREKA_URL=${var.eureka_url}
   SERVER_PORT=8080
   SPRING_APP_NAME=gateway
   EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
@@ -83,7 +83,7 @@ user_data = <<-EOF
   ENVEOF
   
   # Also add to /etc/environment for system-wide availability
-  echo "EUREKA_URL=http://${var.eureka_url}" >> /etc/environment
+  echo "EUREKA_URL=${var.eureka_url}" >> /etc/environment
   
   chown gateway:gateway /opt/gateway/gateway.env
   chmod 600 /opt/gateway/gateway.env
@@ -98,16 +98,3 @@ user_data = <<-EOF
   systemctl daemon-reload
   systemctl restart gateway
 EOF
-
-  tags = {
-    Name        = "gateway-${var.environment}"
-    Environment = var.environment
-    Service     = "gateway"
-    ManagedBy   = "terraform"
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
