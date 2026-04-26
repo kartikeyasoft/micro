@@ -69,13 +69,46 @@ resource "aws_instance" "service1" {
   vpc_security_group_ids = [aws_security_group.service1.id]
   key_name               = var.key_name
 
-  # No user_data needed - service will get Eureka URL from application.properties default
-  # Or use user_data to write the correct URL from SSM
+  user_data = <<-EOF
+    #!/bin/bash
+    # Create environment file with Eureka URL from SSM
+    cat > /opt/service1/service1.env << 'ENVEOF'
+    EUREKA_URL=${var.eureka_url}
+    SERVER_PORT=${var.service_port}
+    SPRING_APP_NAME=service1
+    DB_URL=${var.db_url}
+    DB_USER=${var.db_username}
+    DB_PASSWORD=${var.db_password}
+    ENVEOF
+    
+    # Set proper permissions
+    chown service1:service1 /opt/service1/service1.env
+    chmod 600 /opt/service1/service1.env
+    
+    # Create systemd override directory
+    mkdir -p /etc/systemd/system/service1.service.d
+    
+    # Create override config to load environment file
+    cat > /etc/systemd/system/service1.service.d/override.conf << 'SYSTEMDEOF'
+    [Service]
+    EnvironmentFile=/opt/service1/service1.env
+    SYSTEMDEOF
+    
+    # Reload systemd and restart service
+    systemctl daemon-reload
+    systemctl restart service1
+    
+    echo "Service1 configured with Eureka URL: ${var.eureka_url}"
+  EOF
 
   tags = {
     Name        = "service1-${var.environment}"
     Environment = var.environment
     Service     = "service1"
     ManagedBy   = "terraform"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
