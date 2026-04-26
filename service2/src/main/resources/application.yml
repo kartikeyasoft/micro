@@ -9,30 +9,25 @@ spring:
     username: ${DB_USER:Admin}
     password: ${DB_PASSWORD:Admin@123}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      connection-timeout: 60000
+      maximum-pool-size: 10
+      minimum-idle: 2
   jpa:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
     hibernate:
       ddl-auto: ${JPA_DDL_AUTO:update}
     show-sql: ${JPA_SHOW_SQL:true}
-    properties:
-      hibernate:
-        format_sql: true  # Added for better logging
 
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
   instance:
-    prefer-ip-address: true  # Changed from ${EUREKA_PREFER_IP:true} to always true
-    # No instance-id - let Eureka generate IP-based ID automatically
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info  # Added for health checks
+    prefer-ip-address: true
 
 logging:
   level:
