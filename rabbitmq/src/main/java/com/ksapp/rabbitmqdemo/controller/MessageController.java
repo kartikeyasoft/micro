@@ -1,41 +1,40 @@
-package com.ksapp.rabbitmqdemo.controller;
+package com.example.rabbitmqdemo.controller;
 
-import com.ksapp.rabbitmqdemo.service.MessageProducer;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/messages")
-@CrossOrigin("*")
 public class MessageController {
 
-    @Value("${redis.service.url:http://localhost:1222/redis}")
-    private String redisServiceUrl;
-
     @Autowired
-    private MessageProducer producer;
-
+    private DiscoveryClient discoveryClient;
+    
     @Autowired
-    private RabbitTemplate rabbitTemplate;
-
-    @Autowired
-    private RestTemplate template;
-
-    @PostMapping("/send")
-    public ResponseEntity<String> sendMessage(@RequestBody String message) {
-        rabbitTemplate.convertAndSend("my-exchange", "my-routing-key", message);
-        return ResponseEntity.ok("Message sent to RabbitMQ");
-    }
-
+    private RestTemplate restTemplate;
+    
     @GetMapping("/history")
-    public ResponseEntity<?> getNotificationHistory() {
-        List<Object> history = template.getForObject(redisServiceUrl + "/history", List.class);
-        return ResponseEntity.ok(history);
+    public List<Object> getHistory() {
+        String redisUrl = getRedisServiceUrl();
+        String url = redisUrl + "/redis/history";
+        List<Object> history = restTemplate.getForObject(url, List.class);
+        return history;
+    }
+    
+    private String getRedisServiceUrl() {
+        ServiceInstance redisInstance = discoveryClient.getInstances("redis")
+            .stream()
+            .findFirst()
+            .orElse(null);
+        
+        if (redisInstance != null) {
+            return "http://" + redisInstance.getHost() + ":" + redisInstance.getPort();
+        }
+        return "http://localhost:1222";
     }
 }

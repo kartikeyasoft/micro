@@ -1,36 +1,27 @@
-spring:
-  application:
-    name: ${SPRING_APP_NAME:rabbitmq-service}
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
-  redis:
-    host: ${REDIS_HOST:localhost}
-    port: ${REDIS_PORT:6379}
-
 server:
   port: ${SERVER_PORT:8001}
 
-redis:
-  service:
-    url: ${REDIS_SERVICE_URL:http://localhost:1222/redis}
+spring:
+  application:
+    name: ${SPRING_APP_NAME:rabbitmq}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
 
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
-    registry-fetch-interval-seconds: ${EUREKA_REGISTRY_FETCH_INTERVAL:5}
+    fetch-registry: true
+    register-with-eureka: true
   instance:
-    appname: ${spring.application.name}
-    instance-id: ${spring.application.name}:${server.port}
-    hostname: ${EUREKA_HOST:localhost}
-    prefer-ip-address: ${EUREKA_PREFER_IP:true}
-    metadata-map:
-      instance-type: rabbitmq
-      version: ${APP_VERSION:1.0.0}
+    prefer-ip-address: true
+    instance-id: ${spring.cloud.client.ip-address}:${server.port}
+    hostname: ${spring.cloud.client.ip-address}
 
 logging:
   level:
-    com.example.rabbitmqdemo: ${LOG_LEVEL:INFO}
+    com.example.rabbitmqdemo: INFO
