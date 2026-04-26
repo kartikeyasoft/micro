@@ -16,8 +16,8 @@ pipeline {
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
         
-        // Database credentials from Jenkins
-        DB_USERNAME = credentials('db-username')
+        // Database credentials from Jenkins - FIXED
+        DB_USERNAME = credentials('db-username')  // This creates DB_USERNAME_USR and DB_USERNAME_PSW
         DB_PASSWORD = credentials('db-password')
     }
 
@@ -54,7 +54,6 @@ pipeline {
 
                     echo "DB Username loaded: ${env.DB_USERNAME_USR ? 'YES' : 'NO'}"
                     echo "DB Password loaded: ${env.DB_PASSWORD ? 'YES' : 'NO'}"
-
                 }
             }
         }
@@ -144,10 +143,9 @@ pipeline {
                         "DB_HOST=${env.DB_HOST}",
                         "DB_PORT=${env.DB_PORT}",
                         "DB_NAME=${env.DB_NAME}",
-                        "DB_USERNAME=${env.DB_USERNAME_CREDS_USR}",
+                        "DB_USERNAME=${env.DB_USERNAME_USR}",  // FIXED: Changed from DB_USERNAME_CREDS_USR to DB_USERNAME_USR
                         "DB_PASSWORD=${env.DB_PASSWORD}",
                         "EUREKA_PORT=${env.EUREKA_PORT}"
-                        // Remove EUREKA_IP - not needed
                     ]) {
                         dir('service1/packer') {
                             sh '''
@@ -202,7 +200,8 @@ pipeline {
                 }
             }
         }    
-        
+ 
+      
 
         // stage('Trigger CD Pipeline') {
         //     steps {
@@ -231,7 +230,7 @@ pipeline {
         //         }
         //     }
         // }
-    }
+}
 
     post {
         success {
