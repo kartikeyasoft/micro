@@ -19,6 +19,7 @@ cat > /etc/systemd/system/service1.service.d/override.conf << 'SYSTEMDEOF'
 EnvironmentFile=/opt/service1/service1.env
 SYSTEMDEOF
 
+sed -i 's|PLACEHOLDER|${var.eureka_ip}|g' /opt/service1/service1.env
 systemctl daemon-reload
 systemctl restart service1
 
