@@ -15,29 +15,37 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Data source to get the latest Redis AMI
+# Data source to get the latest Redis AMI (fallback if not provided)
 data "aws_ami" "redis" {
   most_recent = true
   owners      = ["self"]
 
   filter {
     name   = "name"
-    values = ["myapp-redis-service-v*"]  # Fixed: matches your AMI name pattern
+    values = ["myapp-redis-v*"]
   }
 }
 
-# Create security group for Redis
+# Security group for Redis
 resource "aws_security_group" "redis" {
   name        = "redis-sg-${var.environment}"
-  description = "Security group for Redis service"
+  description = "Security group for Redis API service"
   vpc_id      = var.vpc_id
 
   ingress {
-    from_port   = 1222
-    to_port     = 1222
+    from_port   = var.service_port
+    to_port     = var.service_port
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Redis API"
+    description = "Redis API port"
+  }
+
+  ingress {
+    from_port   = 6379
+    to_port     = 6379
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Redis server port"
   }
 
   ingress {
@@ -70,6 +78,38 @@ resource "aws_instance" "redis" {
   vpc_security_group_ids = [aws_security_group.redis.id]
   key_name               = var.key_name
 
+  user_data = <<-EOF
+    #!/bin/bash
+    # Create environment file with Eureka URL from SSM
+    cat > /opt/redis/redis.env << 'ENVEOF'
+    EUREKA_URL=${var.eureka_url}
+    SERVER_PORT=${var.service_port}
+    SPRING_APP_NAME=redis
+    EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
+    EUREKA_CLIENT_FETCH_REGISTRY=true
+    EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+    ENVEOF
+    
+    # Set proper permissions
+    chown redis:redis /opt/redis/redis.env 2>/dev/null || true
+    chmod 600 /opt/redis/redis.env 2>/dev/null || true
+    
+    # Create systemd override directory
+    mkdir -p /etc/systemd/system/redis.service.d
+    
+    # Create override config to load environment file
+    cat > /etc/systemd/system/redis.service.d/override.conf << 'SYSTEMDEOF'
+    [Service]
+    EnvironmentFile=/opt/redis/redis.env
+    SYSTEMDEOF
+    
+    # Reload systemd and restart service
+    systemctl daemon-reload
+    systemctl restart redis
+    
+    echo "Redis configured with Eureka URL: ${var.eureka_url}"
+  EOF
+
   tags = {
     Name        = "redis-${var.environment}"
     Environment = var.environment
@@ -82,14 +122,3 @@ resource "aws_instance" "redis" {
   }
 }
 
-# Elastic IP (Optional)
-resource "aws_eip" "redis" {
-  count    = var.assign_eip ? 1 : 0
-  instance = aws_instance.redis.id
-  domain   = "vpc"
-
-  tags = {
-    Name        = "redis-eip-${var.environment}"
-    Environment = var.environment
-  }
-}

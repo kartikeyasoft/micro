@@ -1,12 +1,14 @@
 ---
-- name: Provision RabbitMQ Backend golden image
+- name: Provision RabbitMQ golden image
   hosts: all
   become: yes
   vars:
     app_user: "rabbitmq"
-    app_name: "rabbitmq-backend"
+    app_name: "rabbitmq"
     app_version: "{{ lookup('env', 'SERVICE_VERSION') }}"
     nexus_url: "{{ lookup('env', 'NEXUS_URL') }}"
+    service_port: "{{ lookup('env', 'SERVICE_PORT') | default('8001') }}"
+    eureka_port: "{{ lookup('env', 'EUREKA_PORT') | default('8761') }}"
 
   tasks:
     - name: Update apt cache
@@ -14,45 +16,33 @@
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Fix broken packages
-      shell: |
-        sudo dpkg --configure -a
-        sudo apt --fix-broken install -y
-        sudo apt autoremove -y
-      changed_when: false
-
-    - name: Install prerequisites
-      apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - wget
-          - gnupg
-          - lsb-release
-          - software-properties-common
-        state: present
-
-    - name: Add deadsnakes PPA for Python
-      apt_repository:
-        repo: "ppa:deadsnakes/ppa"
-        state: present
-
     - name: Install OpenJDK 17
       apt:
-        name: "openjdk-17-jre-headless"
+        name: openjdk-17-jre-headless
         state: present
         update_cache: yes
         force: yes
 
-    - name: Verify Java installation
-      command: java -version
-      register: java_version
-      changed_when: false
+    - name: Install RabbitMQ Server
+      apt:
+        name: rabbitmq-server
+        state: present
 
-    - name: Display Java version
-      debug:
-        msg: "{{ java_version.stderr }}"
+    - name: Install AWS CLI for Parameter Store access
+      apt:
+        name: awscli
+        state: present
+
+    - name: Start and enable RabbitMQ
+      systemd:
+        name: rabbitmq-server
+        state: started
+        enabled: yes
+
+    - name: Enable RabbitMQ management plugin
+      command: rabbitmq-plugins enable rabbitmq_management
+      register: result
+      changed_when: "'enabled' in result.stdout"
 
     - name: Create rabbitmq user
       user:
@@ -69,35 +59,65 @@
         group: "{{ app_user }}"
         mode: "0755"
 
-    - name: Create application.properties
+    - name: Create application.yml with environment variables support
       copy:
         content: |
-          server.port=8001
-          spring.application.name=rabbitmq-backend
+          server:
+            port: \${SERVER_PORT:-{{ service_port }}}
           
-          spring.rabbitmq.host=\${RABBITMQ_HOST:localhost}
-          spring.rabbitmq.port=\${RABBITMQ_PORT:5672}
-          spring.rabbitmq.username=\${RABBITMQ_USERNAME:guest}
-          spring.rabbitmq.password=\${RABBITMQ_PASSWORD:guest}
+          spring:
+            application:
+              name: \${SPRING_APP_NAME:-{{ app_name }}}
+            rabbitmq:
+              host: \${RABBITMQ_HOST:localhost}
+              port: \${RABBITMQ_PORT:5672}
+              username: \${RABBITMQ_USERNAME:guest}
+              password: \${RABBITMQ_PASSWORD:guest}
           
-          spring.redis.host=\${REDIS_HOST:localhost}
-          spring.redis.port=\${REDIS_PORT:6379}
+          eureka:
+            client:
+              service-url:
+                defaultZone: \${EUREKA_URL:-http://localhost:{{ eureka_port }}/eureka/}
+              fetch-registry: true
+              register-with-eureka: true
+            instance:
+              prefer-ip-address: true
+              instance-id: \${spring.cloud.client.ip-address}:\${server.port}
+              hostname: \${spring.cloud.client.ip-address}
           
-          redis.service.url=\${REDIS_SERVICE_URL:http://localhost:1222/redis}
+          redis:
+            service:
+              url: \${REDIS_SERVICE_URL:http://localhost:1222/redis}
           
-          eureka.instance.hostname=\${EUREKA_HOST:localhost}
-          eureka.client.service-url.defaultZone=\${EUREKA_URL:http://localhost:8761/eureka/}
-          eureka.instance.prefer-ip-address=true
+          logging:
+            level:
+              com.ksapp.rabbitmq: INFO
           
-          logging.level.com.ksapp.rabbitmqdemo=INFO
-        dest: "/opt/{{ app_name }}/application.properties"
+          management:
+            endpoints:
+              web:
+                exposure:
+                  include: health,info
+        dest: "/opt/{{ app_name }}/application.yml"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: "0644"
 
+    - name: Create environment file
+      copy:
+        content: |
+          EUREKA_URL=http://localhost:{{ eureka_port }}/eureka/
+          SERVER_PORT={{ service_port }}
+          SPRING_APP_NAME={{ app_name }}
+          REDIS_SERVICE_URL=http://localhost:1222/redis
+        dest: "/opt/{{ app_name }}/{{ app_name }}.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0600"
+
     - name: Download RabbitMQ JAR from Nexus
       get_url:
-        url: "https://raw.githubusercontent.com/kartikeyasoft/test/refs/heads/master/rabbitmqdemo-1.0.0.jar"
+        url: "{{ nexus_url }}/com/ksapp/rabbitmq/{{ app_version }}/rabbitmq-{{ app_version }}.jar"
         dest: "/opt/{{ app_name }}/{{ app_name }}.jar"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
@@ -108,7 +128,7 @@
       register: download_result
       until: download_result is success
 
-    - name: Verify JAR was downloaded
+    - name: Verify JAR file was downloaded
       stat:
         path: "/opt/{{ app_name }}/{{ app_name }}.jar"
       register: jar_file
@@ -118,31 +138,72 @@
         msg: "JAR file was not downloaded successfully from Nexus"
       when: not jar_file.stat.exists or jar_file.stat.size == 0
 
-    - name: Create systemd service file
+    - name: Create systemd service file with environment file support
       copy:
         content: |
           [Unit]
-          Description=RabbitMQ Backend Service
-          After=network.target
+          Description=RabbitMQ API Service
+          After=network.target rabbitmq-server.service
+          Wants=network.target
           
           [Service]
           User={{ app_user }}
+          Group={{ app_user }}
           WorkingDirectory=/opt/{{ app_name }}
+          EnvironmentFile=-/opt/{{ app_name }}/{{ app_name }}.env
           ExecStart=/usr/bin/java -jar /opt/{{ app_name }}/{{ app_name }}.jar
           SuccessExitStatus=143
           Restart=always
           RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+          
+          TimeoutStartSec=300
+          TimeoutStopSec=120
           
           [Install]
           WantedBy=multi-user.target
         dest: "/etc/systemd/system/{{ app_name }}.service"
+        mode: "0644"
 
     - name: Reload systemd
       systemd:
         daemon_reload: yes
 
-    - name: Enable and start service
+    - name: Enable service
       systemd:
         name: "{{ app_name }}"
         enabled: yes
-        state: started 
+
+    - name: Start service
+      systemd:
+        name: "{{ app_name }}"
+        state: started
+
+    - name: Clean up logs before AMI creation
+      shell: |
+        journalctl --rotate
+        journalctl --vacuum-time=1s
+        rm -rf /var/log/journal/*
+        truncate -s 0 /var/log/syslog 2>/dev/null || true
+        truncate -s 0 /var/log/cloud-init.log 2>/dev/null || true
+        truncate -s 0 /var/log/cloud-init-output.log 2>/dev/null || true
+        rm -f /root/.bash_history
+        rm -f /home/ubuntu/.bash_history
+        rm -rf /tmp/*
+        apt-get clean
+      ignore_errors: yes
+      args:
+        warn: no
+
+    - name: Display service status
+      debug:
+        msg: |
+          ========================================
+          RabbitMQ Deployment Complete!
+          ========================================
+          Service Name: {{ app_name }}
+          Service Port: {{ service_port }}
+          Eureka URL: Will be updated dynamically from SSM at boot
+          Redis URL: Will be updated dynamically from SSM at boot
+          ========================================

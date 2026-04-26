@@ -4,9 +4,11 @@
   become: yes
   vars:
     app_user: "redis"
-    app_name: "{{ lookup('env', 'SERVICE_NAME') }}"
+    app_name: "redis"
     app_version: "{{ lookup('env', 'SERVICE_VERSION') }}"
     nexus_url: "{{ lookup('env', 'NEXUS_URL') }}"
+    service_port: "{{ lookup('env', 'SERVICE_PORT') | default('1222') }}"
+    eureka_port: "{{ lookup('env', 'EUREKA_PORT') | default('8761') }}"
 
   tasks:
     - name: Update apt cache
@@ -18,6 +20,24 @@
       apt:
         name: openjdk-17-jre-headless
         state: present
+        update_cache: yes
+        force: yes
+
+    - name: Install Redis Server
+      apt:
+        name: redis-server
+        state: present
+
+    - name: Install AWS CLI for Parameter Store access
+      apt:
+        name: awscli
+        state: present
+
+    - name: Start and enable Redis
+      systemd:
+        name: redis-server
+        state: started
+        enabled: yes
 
     - name: Create redis user
       user:
@@ -32,74 +52,145 @@
         state: directory
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
-        mode: '0755'
+        mode: "0755"
 
-    - name: Create application.yml
+    - name: Create application.yml with environment variables support
       copy:
         content: |
           server:
-            port: 1222
+            port: \${SERVER_PORT:-{{ service_port }}}
           
           spring:
             application:
-              name: redis-service
+              name: \${SPRING_APP_NAME:-{{ app_name }}}
             redis:
-              host: ${REDIS_HOST:localhost}
-              port: ${REDIS_PORT:6379}
+              host: \${REDIS_HOST:localhost}
+              port: \${REDIS_PORT:6379}
           
           eureka:
             client:
               service-url:
-                defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+                defaultZone: \${EUREKA_URL:-http://localhost:{{ eureka_port }}/eureka/}
+              fetch-registry: true
+              register-with-eureka: true
             instance:
               prefer-ip-address: true
               instance-id: \${spring.cloud.client.ip-address}:\${server.port}
+              hostname: \${spring.cloud.client.ip-address}
+          
+          logging:
+            level:
+              com.ksapp.redis: INFO
           
           management:
             endpoints:
               web:
                 exposure:
-                  include: health,info,metrics
+                  include: health,info
         dest: "/opt/{{ app_name }}/application.yml"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
-        mode: '0644'
+        mode: "0644"
+
+    - name: Create environment file
+      copy:
+        content: |
+          EUREKA_URL=http://localhost:{{ eureka_port }}/eureka/
+          SERVER_PORT={{ service_port }}
+          SPRING_APP_NAME={{ app_name }}
+        dest: "/opt/{{ app_name }}/{{ app_name }}.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0600"
 
     - name: Download Redis JAR from Nexus
       get_url:
-        url: "https://raw.githubusercontent.com/kartikeyasoft/test/refs/heads/master/redis-service-1.0.0.jar"
+        url: "{{ nexus_url }}/com/ksapp/redis/{{ app_version }}/redis-{{ app_version }}.jar"
         dest: "/opt/{{ app_name }}/{{ app_name }}.jar"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
-        mode: '0644'
-      retries: 3
+        mode: "0644"
+        timeout: 120
+      retries: 5
       delay: 10
+      register: download_result
+      until: download_result is success
 
-    - name: Create systemd service file
+    - name: Verify JAR file was downloaded
+      stat:
+        path: "/opt/{{ app_name }}/{{ app_name }}.jar"
+      register: jar_file
+
+    - name: Fail if JAR not downloaded
+      fail:
+        msg: "JAR file was not downloaded successfully from Nexus"
+      when: not jar_file.stat.exists or jar_file.stat.size == 0
+
+    - name: Create systemd service file with environment file support
       copy:
         content: |
           [Unit]
-          Description=Redis Cache Service
+          Description=Redis API Service
           After=network.target
+          Wants=network.target
           
           [Service]
           User={{ app_user }}
+          Group={{ app_user }}
           WorkingDirectory=/opt/{{ app_name }}
-          ExecStart=/usr/bin/java -jar /opt/{{ app_name }}/{{ app_name }}.jar --spring.config.location=file:/opt/{{ app_name }}/application.yml
+          EnvironmentFile=-/opt/{{ app_name }}/{{ app_name }}.env
+          ExecStart=/usr/bin/java -jar /opt/{{ app_name }}/{{ app_name }}.jar
           SuccessExitStatus=143
           Restart=always
           RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+          
+          TimeoutStartSec=300
+          TimeoutStopSec=120
           
           [Install]
           WantedBy=multi-user.target
         dest: "/etc/systemd/system/{{ app_name }}.service"
+        mode: "0644"
 
     - name: Reload systemd
       systemd:
         daemon_reload: yes
 
-    - name: Enable and start service
+    - name: Enable service
       systemd:
         name: "{{ app_name }}"
         enabled: yes
+
+    - name: Start service
+      systemd:
+        name: "{{ app_name }}"
         state: started
+
+    - name: Clean up logs before AMI creation
+      shell: |
+        journalctl --rotate
+        journalctl --vacuum-time=1s
+        rm -rf /var/log/journal/*
+        truncate -s 0 /var/log/syslog 2>/dev/null || true
+        truncate -s 0 /var/log/cloud-init.log 2>/dev/null || true
+        truncate -s 0 /var/log/cloud-init-output.log 2>/dev/null || true
+        rm -f /root/.bash_history
+        rm -f /home/ubuntu/.bash_history
+        rm -rf /tmp/*
+        apt-get clean
+      ignore_errors: yes
+      args:
+        warn: no
+
+    - name: Display service status
+      debug:
+        msg: |
+          ========================================
+          Redis Deployment Complete!
+          ========================================
+          Service Name: {{ app_name }}
+          Service Port: {{ service_port }}
+          Eureka URL: Will be updated dynamically from SSM at boot
+          ========================================

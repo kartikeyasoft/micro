@@ -1,5 +1,6 @@
+# Required variables (with defaults for destroy)
 variable "ami_id" {
-  description = "Redis Service AMI ID"
+  description = "Redis AMI ID"
   type        = string
   default     = ""
 }
@@ -8,12 +9,6 @@ variable "aws_region" {
   description = "AWS region"
   type        = string
   default     = "us-east-1"
-}
-
-variable "eureka_url" {
-  description = "Eureka server URL"
-  type        = string
-  default     = "http://localhost:8761/eureka/"
 }
 
 variable "environment" {
@@ -29,13 +24,13 @@ variable "instance_type" {
 }
 
 variable "subnet_id" {
-  description = "Subnet ID for the instance"
+  description = "Subnet ID"
   type        = string
   default     = "subnet-0aa31e769c8f4d73e"
 }
 
 variable "vpc_id" {
-  description = "VPC ID for security group"
+  description = "VPC ID"
   type        = string
   default     = "vpc-0cb7deb47a6bfa727"
 }
@@ -46,8 +41,15 @@ variable "key_name" {
   default     = "ksansible"
 }
 
-variable "assign_eip" {
-  description = "Assign Elastic IP to instance"
-  type        = bool
-  default     = false
+# Service-specific variables
+variable "eureka_url" {
+  description = "Eureka server URL"
+  type        = string
+  default     = ""
+}
+
+variable "service_port" {
+  description = "Redis API port"
+  type        = number
+  default     = 1222
 }

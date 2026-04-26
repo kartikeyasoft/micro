@@ -7,9 +7,8 @@ spring:
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
-  redis:
-    host: ${REDIS_HOST:localhost}
-    port: ${REDIS_PORT:6379}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
 eureka:
   client:
@@ -21,7 +20,23 @@ eureka:
     prefer-ip-address: true
     instance-id: ${spring.cloud.client.ip-address}:${server.port}
     hostname: ${spring.cloud.client.ip-address}
+    lease-renewal-interval-in-seconds: 30
+    lease-expiration-duration-in-seconds: 90
+
+redis:
+  service:
+    url: ${REDIS_SERVICE_URL:http://localhost:1222/redis}
 
 logging:
   level:
-    com.example.rabbitmqdemo: INFO
+    com.ksapp.rabbitmq: INFO
+    org.springframework.cloud.netflix.eureka: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
