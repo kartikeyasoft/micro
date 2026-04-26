@@ -102,19 +102,29 @@ pipeline {
             steps {
                 dir('rabbitmq') {
                     script {
-                        def jarFile = "target/rabbitmq-${env.SERVICE_VERSION}.jar"
+                        def jarFile = "target/rabbitmq-backend-${env.SERVICE_VERSION}.jar"
                         def nexusBaseUrl = env.NEXUS_URL.trim().replaceAll('/$', '')
                         def nexusPath = "${nexusBaseUrl}/com/ksapp/rabbitmq/${env.SERVICE_VERSION}/rabbitmq-${env.SERVICE_VERSION}.jar"
                         
                         echo "Uploading to: ${nexusPath}"
+                        echo "JAR file: ${jarFile}"
+                        
+                        // List files to verify
+                        sh "ls -la target/"
                         
                         withCredentials([usernamePassword(credentialsId: 'nexus-creds', 
                                                         usernameVariable: 'NEXUS_USER', 
                                                         passwordVariable: 'NEXUS_PASS')]) {
                             sh """
-                                curl -v -f -u \${NEXUS_USER}:\${NEXUS_PASS} \
-                                    --upload-file ${jarFile} \
-                                    ${nexusPath}
+                                if [ -f ${jarFile} ]; then
+                                    curl -v -f -u \${NEXUS_USER}:\${NEXUS_PASS} \
+                                        --upload-file ${jarFile} \
+                                        ${nexusPath}
+                                else
+                                    echo "ERROR: JAR file ${jarFile} not found!"
+                                    ls -la target/
+                                    exit 1
+                                fi
                             """
                         }
                     }
