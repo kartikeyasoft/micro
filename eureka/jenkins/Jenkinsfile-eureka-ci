@@ -11,32 +11,31 @@ pipeline {
     environment {
         PATH = "/usr/bin:${env.PATH}"
         
-        // Only static values and credentials here
+        // Credentials from Jenkins
         NEXUS_CREDS = credentials('nexus-creds')
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        
-        // Service Configuration
-        SERVICE_NAME = 'eureka'
     }
 
     stages {
         stage('Load Configuration') {
             steps {
                 script {
-                    // Load configurations from shared library
-                    def nexusCfg = nexusConfig()
-                    def awsCfg = awsConfig()
+                    // Load configuration from shared library
+                    def config = envConfig()
                     
-                    // Set environment variables from shared library
-                    env.NEXUS_URL = nexusCfg.url
-                    env.AWS_DEFAULT_REGION = awsCfg.region
+                    // Set environment variables from config
+                    env.NEXUS_URL = config.nexus.url
+                    env.AWS_DEFAULT_REGION = config.aws.region
+                    env.EUREKA_PORT = config.eureka.defaultPort
+                    env.SERVICE_NAME = 'eureka'
                     
                     echo "=========================================="
-                    echo "Loaded Configuration"
+                    echo "Eureka CI Pipeline"
                     echo "=========================================="
                     echo "Nexus URL: ${env.NEXUS_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
+                    echo "Eureka Port: ${env.EUREKA_PORT}"
                     echo "Service: ${env.SERVICE_NAME}"
                     echo "=========================================="
                 }
@@ -93,18 +92,23 @@ pipeline {
             }
         }
 
-        stage('Deploy to Nexus') {
+        stage('Upload to Nexus') {
             steps {
                 dir('eureka') {
                     script {
                         def jarFile = "target/eureka-${env.SERVICE_VERSION}.jar"
-                        def nexusPath = "${env.NEXUS_URL}/com/ksapp/eureka/${env.SERVICE_VERSION}/eureka-${env.SERVICE_VERSION}.jar"
+                        def nexusBaseUrl = env.NEXUS_URL.trim().replaceAll('/$', '')
+                        def nexusPath = "${nexusBaseUrl}/com/ksapp/eureka/${env.SERVICE_VERSION}/eureka-${env.SERVICE_VERSION}.jar"
+                        
+                        echo "Uploading to: ${nexusPath}"
                         
                         withCredentials([usernamePassword(credentialsId: 'nexus-creds', 
-                                                        usernameVariable: 'NEXUS_USER', 
-                                                        passwordVariable: 'NEXUS_PASS')]) {
+                                                          usernameVariable: 'NEXUS_USER', 
+                                                          passwordVariable: 'NEXUS_PASS')]) {
                             sh """
-                                curl -f -u ${NEXUS_USER}:${NEXUS_PASS} --upload-file ${jarFile} ${nexusPath}
+                                curl -f -u \${NEXUS_USER}:\${NEXUS_PASS} \
+                                    --upload-file ${jarFile} \
+                                    ${nexusPath}
                             """
                         }
                     }
@@ -118,20 +122,39 @@ pipeline {
                     withEnv([
                         "SERVICE_VERSION=${env.SERVICE_VERSION}",
                         "SERVICE_NAME=${env.SERVICE_NAME}",
+                        "SERVICE_PORT=${env.EUREKA_PORT}",
                         "NEXUS_URL=${env.NEXUS_URL}"
                     ]) {
                         dir('eureka/packer') {
                             sh '''
+                                set -e
+                                echo "=========================================="
+                                echo "Building Golden AMI for Eureka"
+                                echo "=========================================="
+                                echo "Service Name: ${SERVICE_NAME}"
+                                echo "Service Version: ${SERVICE_VERSION}"
+                                echo "Service Port: ${SERVICE_PORT}"
+                                echo "Nexus URL: ${NEXUS_URL}"
+                                echo "=========================================="
+                                
                                 packer init eureka.pkr.hcl
+                                
                                 packer build \
                                     -var "service_version=${SERVICE_VERSION}" \
                                     -var "service_name=${SERVICE_NAME}" \
+                                    -var "service_port=${SERVICE_PORT}" \
                                     -var "nexus_url=${NEXUS_URL}" \
                                     eureka.pkr.hcl 2>&1 | tee build-output.txt
                                 
                                 AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
+                                
+                                if [ -z "$AMI_ID" ]; then
+                                    echo "ERROR: Failed to extract AMI ID from build output"
+                                    exit 1
+                                fi
+                                
                                 echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
-                                echo "Successfully created AMI: $AMI_ID"
+                                echo "✅ Successfully created AMI: $AMI_ID"
                             '''
                             
                             script {
@@ -139,6 +162,7 @@ pipeline {
                                 env.AMI_ID = amiProps.split('=')[1].trim()
                                 echo "✅ Captured AMI ID: ${env.AMI_ID}"
                             }
+                            
                             stash name: 'eureka-ami', includes: 'golden-ami.properties'
                         }
                     }
@@ -146,41 +170,45 @@ pipeline {
             }
         }
 
-    //     stage('Trigger CD Pipeline') {
-    //         steps {
-    //             script {
-    //                 echo "=========================================="
-    //                 echo "Triggering CD Pipeline"
-    //                 echo "=========================================="
-    //                 echo "Version: ${env.SERVICE_VERSION}"
-    //                 echo "AMI ID: ${env.AMI_ID}"
-    //                 echo "=========================================="
+        stage('Trigger CD Pipeline') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "Triggering CD Pipeline"
+                    echo "=========================================="
+                    echo "Version: ${env.SERVICE_VERSION}"
+                    echo "AMI ID: ${env.AMI_ID}"
+                    echo "=========================================="
                     
-    //                 if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
-    //                     echo "✅ Valid AMI ID, triggering CD pipeline..."
+                    if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
+                        echo "✅ Valid AMI ID, triggering CD pipeline..."
                         
-    //                     build job: 'eureka-cd',
-    //                         parameters: [
-    //                             string(name: 'AMI_ID', value: env.AMI_ID),
-    //                             string(name: 'ACTION', value: 'apply')
-    //                         ],
-    //                         wait: false
+                        build job: 'eureka-cd',
+                            parameters: [
+                                string(name: 'AMI_ID', value: env.AMI_ID),
+                                string(name: 'ACTION', value: 'apply')
+                            ],
+                            wait: false
                         
-    //                     echo "✅ CD pipeline triggered successfully!"
-    //                 } else {
-    //                     error "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
-    //                 }
-    //             }
-    //         }
-    //     }
-     }
+                        echo "✅ CD pipeline triggered successfully!"
+                    } else {
+                        error "❌ Invalid or empty AMI ID: ${env.AMI_ID}"
+                    }
+                }
+            }
+        }
+    }
 
     post {
         success {
             echo "🎉 Eureka CI completed successfully! AMI: ${env.AMI_ID}"
+            echo "📋 Next: Run Eureka CD pipeline to deploy"
         }
         failure {
             echo "❌ Eureka CI failed!"
+            script {
+                echo "Check the logs above for detailed error information"
+            }
         }
     }
 }
