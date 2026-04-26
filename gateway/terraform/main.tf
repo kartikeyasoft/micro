@@ -70,31 +70,43 @@ resource "aws_instance" "gateway" {
   vpc_security_group_ids = [aws_security_group.gateway.id]
   key_name               = var.key_name
 
-user_data = <<-EOF
-  #!/bin/bash
-  # Create environment file
-  cat > /opt/gateway/gateway.env << 'ENVEOF'
-  EUREKA_URL=${var.eureka_url}
-  SERVER_PORT=8080
-  SPRING_APP_NAME=gateway
-  EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
-  EUREKA_CLIENT_FETCH_REGISTRY=true
-  EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
-  ENVEOF
-  
-  # Also add to /etc/environment for system-wide availability
-  echo "EUREKA_URL=${var.eureka_url}" >> /etc/environment
-  
-  chown gateway:gateway /opt/gateway/gateway.env
-  chmod 600 /opt/gateway/gateway.env
-  
-  # Create systemd override
-  mkdir -p /etc/systemd/system/gateway.service.d
-  cat > /etc/systemd/system/gateway.service.d/override.conf << 'SYSTEMDEOF'
-  [Service]
-  EnvironmentFile=/opt/gateway/gateway.env
-  SYSTEMDEOF
-  
-  systemctl daemon-reload
-  systemctl restart gateway
-EOF
+  user_data = <<-EOF
+    #!/bin/bash
+    # Create environment file
+    cat > /opt/gateway/gateway.env << 'ENVEOF'
+    EUREKA_URL=${var.eureka_url}
+    SERVER_PORT=8080
+    SPRING_APP_NAME=gateway
+    EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
+    EUREKA_CLIENT_FETCH_REGISTRY=true
+    EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+    ENVEOF
+    
+    # Also add to /etc/environment for system-wide availability
+    echo "EUREKA_URL=${var.eureka_url}" >> /etc/environment
+    
+    chown gateway:gateway /opt/gateway/gateway.env
+    chmod 600 /opt/gateway/gateway.env
+    
+    # Create systemd override
+    mkdir -p /etc/systemd/system/gateway.service.d
+    cat > /etc/systemd/system/gateway.service.d/override.conf << 'SYSTEMDEOF'
+    [Service]
+    EnvironmentFile=/opt/gateway/gateway.env
+    SYSTEMDEOF
+    
+    systemctl daemon-reload
+    systemctl restart gateway
+  EOF
+
+  tags = {
+    Name        = "gateway-${var.environment}"
+    Environment = var.environment
+    Service     = "gateway"
+    ManagedBy   = "terraform"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
