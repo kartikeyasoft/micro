@@ -101,7 +101,7 @@
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: "0644"
-        
+
     - name: Create initial environment file with PLACEHOLDER
       copy:
         content: |
@@ -116,11 +116,10 @@
         group: "{{ app_user }}"
         mode: "0600"
 
-    - name: Create initial environment file
+    - name: Create environment file
       copy:
         content: |
-          # Environment variables for Service1
-          EUREKA_URL=http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
+          EUREKA_URL=http://localhost:8761/eureka/
           SERVER_PORT={{ service_port }}
           SPRING_APP_NAME={{ app_name }}
           DB_URL=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC

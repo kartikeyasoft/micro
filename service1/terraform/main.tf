@@ -62,7 +62,6 @@ resource "aws_security_group" "service1" {
   }
 }
 
-# EC2 Instance
 resource "aws_instance" "service1" {
   ami                    = var.ami_id != "" ? var.ami_id : data.aws_ami.service1.id
   instance_type          = var.instance_type
@@ -70,25 +69,13 @@ resource "aws_instance" "service1" {
   vpc_security_group_ids = [aws_security_group.service1.id]
   key_name               = var.key_name
 
-  user_data = <<-EOF
-    #!/bin/bash
-    # Replace PLACEHOLDER with actual Eureka URL
-    sed -i 's|PLACEHOLDER|${var.eureka_url}|g' /opt/service1/service1.env
-    # Restart service to pick up new configuration
-    systemctl stop service1
-    systemctl start service1
-    systemctl enable service1
-    echo "Service1 configured with Eureka URL: ${var.eureka_url}"
-  EOF
+  # No user_data needed - service will get Eureka URL from application.properties default
+  # Or use user_data to write the correct URL from SSM
 
   tags = {
     Name        = "service1-${var.environment}"
     Environment = var.environment
     Service     = "service1"
     ManagedBy   = "terraform"
-  }
-
-  lifecycle {
-    create_before_destroy = true
   }
 }
