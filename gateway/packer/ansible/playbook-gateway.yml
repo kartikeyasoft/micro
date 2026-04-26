@@ -131,6 +131,21 @@
         msg: "JAR file was not downloaded successfully from Nexus"
       when: not jar_file.stat.exists or jar_file.stat.size == 0
 
+
+    - name: Create environment file template
+      copy:
+        content: |
+          EUREKA_URL=http://localhost:8761/eureka/
+          SERVER_PORT=8080
+          SPRING_APP_NAME=gateway
+          EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
+          EUREKA_CLIENT_FETCH_REGISTRY=true
+          EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+        dest: "/opt/gateway/gateway.env"
+        owner: gateway
+        group: gateway
+        mode: "0600"
+
     - name: Create systemd service file with environment file support
       copy:
         content: |

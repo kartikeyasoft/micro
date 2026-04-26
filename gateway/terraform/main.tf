@@ -75,8 +75,11 @@ resource "aws_instance" "gateway" {
     # Create environment file with Eureka URL from SSM
     cat > /opt/gateway/gateway.env << 'ENVEOF'
     EUREKA_URL=${var.eureka_url}
-    SERVER_PORT=${var.service_port}
+    SERVER_PORT=8080
     SPRING_APP_NAME=gateway
+    EUREKA_CLIENT_REGISTER_WITH_EUREKA=true
+    EUREKA_CLIENT_FETCH_REGISTRY=true
+    EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
     ENVEOF
     
     # Set proper permissions
