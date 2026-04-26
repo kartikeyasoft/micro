@@ -175,6 +175,15 @@ pipeline {
                                 echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
                                 echo "✅ Successfully created AMI: $AMI_ID"
                             '''
+                            script {
+                                // Read AMI ID from properties file
+                                def amiProps = readFile('golden-ami.properties')
+                                env.AMI_ID = amiProps.split('=')[1].trim()
+                                echo "✅ Captured AMI ID: ${env.AMI_ID}"
+                            }
+                            
+                            // Stash the AMI ID for CD pipeline
+                            stash name: 'rabbitmq-ami', includes: 'golden-ami.properties'
                         }
                     }
                 }
