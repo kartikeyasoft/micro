@@ -23,11 +23,16 @@ variable "nexus_url" {
   type    = string 
 }
 
+variable "eureka_port" {
+  type    = string
+  default = "8761"
+}
+
 source "amazon-ebs" "eureka" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
-  source_ami      = "ami-0c7217cdde317cfec"
+  source_ami      = "ami-0c7217cdde317cfec"  # Ubuntu 22.04
   ssh_username    = "ubuntu"
 }
 
@@ -39,7 +44,8 @@ build {
     ansible_env_vars = [
       "SERVICE_NAME=${var.service_name}",
       "SERVICE_VERSION=${var.service_version}",
-      "NEXUS_URL=${var.nexus_url}"
+      "NEXUS_URL=${var.nexus_url}",
+      "EUREKA_PORT=${var.eureka_port}"
     ]
   }
 }
