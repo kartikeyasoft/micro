@@ -44,12 +44,14 @@
       register: result
       changed_when: "'enabled' in result.stdout"
 
-    - name: Create rabbitmq user
+    - name: Ensure rabbitmq user exists
       user:
         name: "{{ app_user }}"
         system: yes
         home: "/opt/{{ app_name }}"
         create_home: yes
+        state: present
+      ignore_errors: yes
 
     - name: Create application directory
       file:
