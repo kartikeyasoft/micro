@@ -15,7 +15,7 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Data source to get the latest Service2 AMI
+# Data source to get the latest Service2 AMI (fallback if not provided)
 data "aws_ami" "service2" {
   most_recent = true
   owners      = ["self"]
@@ -26,18 +26,18 @@ data "aws_ami" "service2" {
   }
 }
 
-# Security Group for Service2
+# Security group for Service2
 resource "aws_security_group" "service2" {
   name        = "service2-sg-${var.environment}"
   description = "Security group for Service2"
   vpc_id      = var.vpc_id
 
   ingress {
-    from_port   = 9002
-    to_port     = 9002
+    from_port   = var.service_port
+    to_port     = var.service_port
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Service2 API"
+    description = "Service2 API port"
   }
 
   ingress {
@@ -62,7 +62,7 @@ resource "aws_security_group" "service2" {
   }
 }
 
-# EC2 Instance for Service2
+# EC2 Instance
 resource "aws_instance" "service2" {
   ami                    = var.ami_id != "" ? var.ami_id : data.aws_ami.service2.id
   instance_type          = var.instance_type
@@ -72,8 +72,34 @@ resource "aws_instance" "service2" {
 
   user_data = <<-EOF
     #!/bin/bash
-    echo "Service2 instance started"
-    # Optional: Add any initialization scripts here
+    # Create environment file with Eureka URL from SSM
+    cat > /opt/service2/service2.env << 'ENVEOF'
+    EUREKA_URL=${var.eureka_url}
+    SERVER_PORT=${var.service_port}
+    SPRING_APP_NAME=service2
+    DB_URL=${var.db_url}
+    DB_USER=${var.db_username}
+    DB_PASSWORD=${var.db_password}
+    ENVEOF
+    
+    # Set proper permissions
+    chown service2:service2 /opt/service2/service2.env 2>/dev/null || true
+    chmod 600 /opt/service2/service2.env 2>/dev/null || true
+    
+    # Create systemd override directory
+    mkdir -p /etc/systemd/system/service2.service.d
+    
+    # Create override config to load environment file
+    cat > /etc/systemd/system/service2.service.d/override.conf << 'SYSTEMDEOF'
+    [Service]
+    EnvironmentFile=/opt/service2/service2.env
+    SYSTEMDEOF
+    
+    # Reload systemd and restart service
+    systemctl daemon-reload
+    systemctl restart service2
+    
+    echo "Service2 configured with Eureka URL: ${var.eureka_url}"
   EOF
 
   tags = {
@@ -88,14 +114,3 @@ resource "aws_instance" "service2" {
   }
 }
 
-# Elastic IP (Optional)
-resource "aws_eip" "service2" {
-  count    = var.assign_eip ? 1 : 0
-  instance = aws_instance.service2.id
-  domain   = "vpc"
-
-  tags = {
-    Name        = "service2-eip-${var.environment}"
-    Environment = var.environment
-  }
-}

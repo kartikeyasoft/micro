@@ -1,38 +1,14 @@
+# Required variables (with defaults for destroy)
 variable "ami_id" {
   description = "Service2 AMI ID"
   type        = string
-  default     = ""   # ← Add this line
+  default     = ""
 }
 
 variable "aws_region" {
   description = "AWS region"
   type        = string
   default     = "us-east-1"
-}
-
-variable "eureka_url" {
-  description = "Eureka server URL"
-  type        = string
-  default     = "http://localhost:8761/eureka/"
-}
-
-variable "db_url" {
-  description = "Database URL"
-  type        = string
-  default     = "jdbc:mysql://172.21.12.151:3306/exam?useSSL=false&serverTimezone=UTC"
-}
-
-variable "db_username" {
-  description = "Database username"
-  type        = string
-  default     = "Admin"
-}
-
-variable "db_password" {
-  description = "Database password"
-  type        = string
-  sensitive   = true
-  default     = "Admin@123"
 }
 
 variable "environment" {
@@ -48,13 +24,13 @@ variable "instance_type" {
 }
 
 variable "subnet_id" {
-  description = "Subnet ID for the instance"
+  description = "Subnet ID"
   type        = string
   default     = "subnet-0aa31e769c8f4d73e"
 }
 
 variable "vpc_id" {
-  description = "VPC ID for security group"
+  description = "VPC ID"
   type        = string
   default     = "vpc-0cb7deb47a6bfa727"
 }
@@ -65,8 +41,35 @@ variable "key_name" {
   default     = "ksansible"
 }
 
-variable "assign_eip" {
-  description = "Assign Elastic IP to instance"
-  type        = bool
-  default     = false
+# Service-specific variables
+variable "eureka_url" {
+  description = "Eureka server URL"
+  type        = string
+  default     = ""
+}
+
+variable "db_url" {
+  description = "Database URL"
+  type        = string
+  default     = ""
+}
+
+variable "db_username" {
+  description = "Database username"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "db_password" {
+  description = "Database password"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "service_port" {
+  description = "Service2 API port"
+  type        = number
+  default     = 9002
 }
