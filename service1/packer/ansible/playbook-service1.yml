@@ -101,22 +101,20 @@
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: "0644"
-
-    - name: Create environment file template
+        
+    - name: Create initial environment file with PLACEHOLDER
       copy:
         content: |
-          # Environment variables for Service1
-          # This file will be overwritten at deployment time with actual values
-          EUREKA_URL=http://{{ eureka_ip }}:{{ eureka_port }}/eureka/
+          EUREKA_URL=http://PLACEHOLDER:{{ eureka_port }}/eureka/
           SERVER_PORT={{ service_port }}
           SPRING_APP_NAME={{ app_name }}
           DB_URL=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
           DB_USER={{ db_username }}
           DB_PASSWORD={{ db_password }}
-        dest: "/opt/{{ app_name }}/service1.env.template"
+        dest: "/opt/{{ app_name }}/service1.env"
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
-        mode: "0644"
+        mode: "0600"
 
     - name: Create initial environment file
       copy:

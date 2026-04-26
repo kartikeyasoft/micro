@@ -75,7 +75,9 @@ resource "aws_instance" "service1" {
     # Replace PLACEHOLDER with actual Eureka URL
     sed -i 's|PLACEHOLDER|${var.eureka_url}|g' /opt/service1/service1.env
     # Restart service to pick up new configuration
-    systemctl restart service1
+    systemctl stop service1
+    systemctl start service1
+    systemctl enable service1
     echo "Service1 configured with Eureka URL: ${var.eureka_url}"
   EOF
 
