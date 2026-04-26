@@ -34,12 +34,17 @@ variable "eureka_port" {
   default = "8761"
 }
 
+variable "redis_port" {
+  type    = string
+  default = "1222"
+}
+
 # Source AMI
 source "amazon-ebs" "rabbitmq" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
-  source_ami      = "ami-0c7217cdde317cfec"  # Ubuntu 22.04
+  source_ami      = "ami-0c7217cdde317cfec"
   ssh_username    = "ubuntu"
 }
 
@@ -54,7 +59,8 @@ build {
       "SERVICE_VERSION=${var.service_version}",
       "SERVICE_PORT=${var.service_port}",
       "NEXUS_URL=${var.nexus_url}",
-      "EUREKA_PORT=${var.eureka_port}"
+      "EUREKA_PORT=${var.eureka_port}",
+      "REDIS_PORT=${var.redis_port}"
     ]
   }
 }
