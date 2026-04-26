@@ -102,20 +102,6 @@
         group: "{{ app_user }}"
         mode: "0644"
 
-    - name: Create initial environment file with PLACEHOLDER
-      copy:
-        content: |
-          EUREKA_URL=http://PLACEHOLDER:{{ eureka_port }}/eureka/
-          SERVER_PORT={{ service_port }}
-          SPRING_APP_NAME={{ app_name }}
-          DB_URL=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
-          DB_USER={{ db_username }}
-          DB_PASSWORD={{ db_password }}
-        dest: "/opt/{{ app_name }}/service1.env"
-        owner: "{{ app_user }}"
-        group: "{{ app_user }}"
-        mode: "0600"
-
     - name: Create environment file
       copy:
         content: |
@@ -186,73 +172,6 @@
         dest: "/etc/systemd/system/{{ app_name }}.service"
         mode: "0644"
 
-    - name: Create dynamic Eureka update script
-      copy:
-        content: |
-          #!/bin/bash
-          # Script to dynamically update Eureka URL at boot time
-          
-          # Wait for network to be ready
-          sleep 10
-          
-          # Try to get Eureka IP from AWS Parameter Store
-          EUREKA_IP=$(aws ssm get-parameter --name "/exam/eureka/ip" --query 'Parameter.Value' --output text 2>/dev/null)
-          
-          if [ -z "$EUREKA_IP" ] || [ "$EUREKA_IP" == "None" ]; then
-              # Fallback: Try to discover Eureka via EC2 tags
-              EUREKA_IP=$(aws ec2 describe-instances \
-                  --filters "Name=tag:Name,Values=eureka*" "Name=instance-state-name,Values=running" \
-                  --query 'Reservations[0].Instances[0].PrivateIpAddress' \
-                  --output text 2>/dev/null)
-          fi
-          
-          if [ -z "$EUREKA_IP" ] || [ "$EUREKA_IP" == "None" ]; then
-              # Final fallback: Use the default from AMI
-              EUREKA_IP="{{ eureka_ip }}"
-          fi
-          
-          # Update the environment file with correct Eureka URL
-          cat > /opt/service1/service1.env << EOF
-          EUREKA_URL=http://${EUREKA_IP}:{{ eureka_port }}/eureka/
-          SERVER_PORT={{ service_port }}
-          SPRING_APP_NAME={{ app_name }}
-          DB_URL=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
-          DB_USER={{ db_username }}
-          DB_PASSWORD={{ db_password }}
-          EOF
-          
-          # Set correct permissions
-          chown service1:service1 /opt/service1/service1.env
-          chmod 600 /opt/service1/service1.env
-          
-          # Restart service to pick up new configuration
-          systemctl restart service1
-          
-          echo "Eureka URL configured: http://${EUREKA_IP}:{{ eureka_port }}/eureka/"
-        dest: "/opt/{{ app_name }}/update-eureka.sh"
-        owner: "root"
-        group: "root"
-        mode: "0755"
-
-    - name: Create systemd service for Eureka update at boot
-      copy:
-        content: |
-          [Unit]
-          Description=Update Eureka configuration for Service1
-          After=network.target
-          Wants=network.target
-          Before=service1.service
-          
-          [Service]
-          Type=oneshot
-          ExecStart=/opt/service1/update-eureka.sh
-          RemainAfterExit=yes
-          
-          [Install]
-          WantedBy=multi-user.target
-        dest: "/etc/systemd/system/service1-eureka-update.service"
-        mode: "0644"
-
     - name: Reload systemd
       systemd:
         daemon_reload: yes
@@ -260,11 +179,6 @@
     - name: Enable service
       systemd:
         name: "{{ app_name }}"
-        enabled: yes
-
-    - name: Enable eureka update service
-      systemd:
-        name: service1-eureka-update
         enabled: yes
 
     - name: Start service
@@ -281,6 +195,38 @@
         msg: "DB_USERNAME is null! Please check Jenkins credentials."
       when: db_username == 'null' or db_username == ''
 
+    - name: Clean up logs before AMI creation
+      shell: |
+        # Clear systemd journals
+        journalctl --rotate
+        journalctl --vacuum-time=1s
+        rm -rf /var/log/journal/*
+        
+        # Clear system logs
+        truncate -s 0 /var/log/syslog 2>/dev/null || true
+        truncate -s 0 /var/log/auth.log 2>/dev/null || true
+        truncate -s 0 /var/log/cloud-init.log 2>/dev/null || true
+        truncate -s 0 /var/log/cloud-init-output.log 2>/dev/null || true
+        
+        # Clear bash history
+        rm -f /root/.bash_history
+        rm -f /home/ubuntu/.bash_history
+        
+        # Clear tmp files
+        rm -rf /tmp/*
+        rm -rf /var/tmp/*
+        
+        # Clear apt cache
+        apt-get clean
+        apt-get autoclean
+        
+        # Zero out free space (optional)
+        dd if=/dev/zero of=/zero.fill bs=1M 2>/dev/null || true
+        rm -f /zero.fill
+      ignore_errors: yes
+      args:
+        warn: no
+
     - name: Display service status
       debug:
         msg: |
@@ -290,5 +236,5 @@
           Service Name: {{ app_name }}
           Service Port: {{ service_port }}
           Database Host: {{ db_host }}
-          Eureka URL: Will be discovered dynamically at boot
+          Eureka URL: Will be discovered dynamically via SSM at boot
           ========================================
