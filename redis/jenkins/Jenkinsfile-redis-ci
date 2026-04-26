@@ -96,19 +96,26 @@ pipeline {
             steps {
                 dir('redis') {
                     script {
-                        def jarFile = "target/redis-${env.SERVICE_VERSION}.jar"
+                        def jarFile = "target/redis-service-${env.SERVICE_VERSION}.jar"
                         def nexusBaseUrl = env.NEXUS_URL.trim().replaceAll('/$', '')
                         def nexusPath = "${nexusBaseUrl}/com/ksapp/redis/${env.SERVICE_VERSION}/redis-${env.SERVICE_VERSION}.jar"
                         
                         echo "Uploading to: ${nexusPath}"
+                        echo "JAR file: ${jarFile}"
                         
                         withCredentials([usernamePassword(credentialsId: 'nexus-creds', 
                                                         usernameVariable: 'NEXUS_USER', 
                                                         passwordVariable: 'NEXUS_PASS')]) {
                             sh """
-                                curl -v -f -u \${NEXUS_USER}:\${NEXUS_PASS} \
-                                    --upload-file ${jarFile} \
-                                    ${nexusPath}
+                                if [ -f ${jarFile} ]; then
+                                    curl -v -f -u \${NEXUS_USER}:\${NEXUS_PASS} \
+                                        --upload-file ${jarFile} \
+                                        ${nexusPath}
+                                else
+                                    echo "ERROR: JAR file ${jarFile} not found!"
+                                    ls -la target/
+                                    exit 1
+                                fi
                             """
                         }
                     }
