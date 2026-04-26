@@ -11,6 +11,7 @@ packer {
   }
 }
 
+# Declare all variables
 variable "service_name" {
   type = string
 }
@@ -19,8 +20,45 @@ variable "service_version" {
   type = string
 }
 
+variable "service_port" {
+  type    = string
+  default = "9001"
+}
+
 variable "nexus_url" {
   type = string
+}
+
+variable "db_host" {
+  type = string
+}
+
+variable "db_port" {
+  type    = string
+  default = "3306"
+}
+
+variable "db_name" {
+  type = string
+}
+
+variable "db_username" {
+  type = string
+}
+
+variable "db_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "eureka_ip" {
+  type    = string
+  default = "localhost"
+}
+
+variable "eureka_port" {
+  type    = string
+  default = "8761"
 }
 
 source "amazon-ebs" "service1" {
@@ -39,26 +77,15 @@ build {
     ansible_env_vars = [
       "SERVICE_NAME=${var.service_name}",
       "SERVICE_VERSION=${var.service_version}",
-      "NEXUS_URL=${var.nexus_url}"
-    ]
-  }
-
-  # Cleanup provisioner - CRITICAL for clean AMI
-  provisioner "shell" {
-    inline = [
-      "echo '========== STARTING LOG CLEANUP =========='",
-      "sudo journalctl --rotate",
-      "sudo journalctl --vacuum-time=1s",
-      "sudo rm -rf /var/log/journal/*",
-      "sudo truncate -s 0 /var/log/syslog 2>/dev/null || true",
-      "sudo truncate -s 0 /var/log/auth.log 2>/dev/null || true",
-      "sudo truncate -s 0 /var/log/cloud-init.log 2>/dev/null || true",
-      "sudo truncate -s 0 /var/log/cloud-init-output.log 2>/dev/null || true",
-      "sudo rm -f /root/.bash_history",
-      "sudo rm -f /home/ubuntu/.bash_history",
-      "sudo rm -rf /tmp/*",
-      "sudo apt-get clean",
-      "echo '========== LOG CLEANUP COMPLETED =========='"
+      "SERVICE_PORT=${var.service_port}",
+      "NEXUS_URL=${var.nexus_url}",
+      "DB_HOST=${var.db_host}",
+      "DB_PORT=${var.db_port}",
+      "DB_NAME=${var.db_name}",
+      "DB_USERNAME=${var.db_username}",
+      "DB_PASSWORD=${var.db_password}",
+      "EUREKA_IP=${var.eureka_ip}",
+      "EUREKA_PORT=${var.eureka_port}"
     ]
   }
 }

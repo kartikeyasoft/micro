@@ -133,7 +133,7 @@ pipeline {
             }
         }
 
-      stage('Bake Golden Image') {
+       stage('Bake Golden Image') {
             steps {
                 script {
                     withEnv([
@@ -144,10 +144,10 @@ pipeline {
                         "DB_HOST=${env.DB_HOST}",
                         "DB_PORT=${env.DB_PORT}",
                         "DB_NAME=${env.DB_NAME}",
-                        "DB_USERNAME=${env.DB_USERNAME_USR}",
+                        "DB_USERNAME=${env.DB_USERNAME_CREDS_USR}",
                         "DB_PASSWORD=${env.DB_PASSWORD}",
-                        "EUREKA_IP=${env.EUREKA_IP}",
                         "EUREKA_PORT=${env.EUREKA_PORT}"
+                        // Remove EUREKA_IP - not needed
                     ]) {
                         dir('service1/packer') {
                             sh '''
@@ -158,18 +158,14 @@ pipeline {
                                 echo "Service Name: ${SERVICE_NAME}"
                                 echo "Service Version: ${SERVICE_VERSION}"
                                 echo "Service Port: ${SERVICE_PORT}"
-                                echo "Nexus URL: ${NEXUS_URL}"
                                 echo "DB Host: ${DB_HOST}"
                                 echo "DB Port: ${DB_PORT}"
                                 echo "DB Name: ${DB_NAME}"
-                                echo "Eureka IP: ${EUREKA_IP}"
                                 echo "Eureka Port: ${EUREKA_PORT}"
                                 echo "=========================================="
                                 
-                                # Initialize Packer
                                 packer init service1.pkr.hcl
                                 
-                                # Build the AMI
                                 packer build \
                                     -var "service_name=${SERVICE_NAME}" \
                                     -var "service_version=${SERVICE_VERSION}" \
@@ -180,11 +176,9 @@ pipeline {
                                     -var "db_name=${DB_NAME}" \
                                     -var "db_username=${DB_USERNAME}" \
                                     -var "db_password=${DB_PASSWORD}" \
-                                    -var "eureka_ip=${EUREKA_IP}" \
                                     -var "eureka_port=${EUREKA_PORT}" \
                                     service1.pkr.hcl 2>&1 | tee build-output.txt
                                 
-                                # Extract AMI ID from build output
                                 AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
                                 
                                 if [ -z "$AMI_ID" ]; then
@@ -197,20 +191,17 @@ pipeline {
                             '''
                             
                             script {
-                                // Read the AMI ID from the properties file
                                 def amiProps = readFile('golden-ami.properties')
                                 env.AMI_ID = amiProps.split('=')[1].trim()
                                 echo "✅ Captured AMI ID: ${env.AMI_ID}"
                             }
                             
-                            // Stash the AMI ID for CD pipeline
                             stash name: 'service1-ami', includes: 'golden-ami.properties'
                         }
                     }
                 }
             }
-        }
-                
+        }    
         
 
         // stage('Trigger CD Pipeline') {
