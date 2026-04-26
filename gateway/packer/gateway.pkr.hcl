@@ -11,6 +11,7 @@ packer {
   }
 }
 
+# Variables
 variable "service_name" {
   type = string
 }
@@ -19,10 +20,21 @@ variable "service_version" {
   type = string
 }
 
+variable "service_port" {
+  type    = string
+  default = "8080"
+}
+
 variable "nexus_url" {
   type = string
 }
 
+variable "eureka_port" {
+  type    = string
+  default = "8761"
+}
+
+# Source AMI
 source "amazon-ebs" "gateway" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
@@ -31,6 +43,7 @@ source "amazon-ebs" "gateway" {
   ssh_username    = "ubuntu"
 }
 
+# Build
 build {
   sources = ["source.amazon-ebs.gateway"]
 
@@ -39,7 +52,9 @@ build {
     ansible_env_vars = [
       "SERVICE_NAME=${var.service_name}",
       "SERVICE_VERSION=${var.service_version}",
-      "NEXUS_URL=${var.nexus_url}"
+      "SERVICE_PORT=${var.service_port}",
+      "NEXUS_URL=${var.nexus_url}",
+      "EUREKA_PORT=${var.eureka_port}"
     ]
   }
 }
