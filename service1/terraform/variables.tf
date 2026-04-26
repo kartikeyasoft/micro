@@ -67,3 +67,9 @@ variable "db_password" {
   default     = ""
   sensitive   = true
 }
+
+variable "service_port" {
+  description = "Service1 API port"
+  type        = number
+  default     = 9001
+}
