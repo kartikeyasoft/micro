@@ -4,10 +4,6 @@ packer {
       version = ">= 1.2.8"
       source  = "github.com/hashicorp/amazon"
     }
-    ansible = {
-      version = ">= 1.1.1"
-      source  = "github.com/hashicorp/ansible"
-    }
   }
 }
 
@@ -24,34 +20,31 @@ variable "source_ami" {
   type        = string
 }
 
-
-variable "nexus_url" {
-  type    = string 
-}
-
-variable "eureka_port" {
-  type    = string
-  default = "8761"
-}
-
-source "amazon-ebs" "eureka" {
-  ami_name        = "myapp-${var.service_name}-v${var.service_version}"
+source "amazon-ebs" "custom-ami" {
+  ami_name        = "${var.service_name}-${var.service_version}-{{timestamp}}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
   source_ami      = var.source_ami
   ssh_username    = "ubuntu"
+  
+  tags = {
+    Name        = "${var.service_name}-v${var.service_version}"
+    Service     = var.service_name
+    Version     = var.service_version
+    CreatedBy   = "Packer"
+    Environment = "production"
+  }
 }
 
 build {
-  sources = ["source.amazon-ebs.eureka"]
+  sources = ["source.amazon-ebs.custom-ami"]
 
   provisioner "ansible" {
-    playbook_file = "./ansible/playbook-eureka.yml"
+    playbook_file   = "./ansible/playbook-ami.yml"
+    extra_arguments = ["--verbose"]
     ansible_env_vars = [
-      "SERVICE_NAME=${var.service_name}",
-      "SERVICE_VERSION=${var.service_version}",
-      "NEXUS_URL=${var.nexus_url}",
-      "EUREKA_PORT=${var.eureka_port}"
+      "ANSIBLE_HOST_KEY_CHECKING=False",
+      "ANSIBLE_SSH_RETRIES=3"
     ]
   }
 }

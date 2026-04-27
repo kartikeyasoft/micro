@@ -1,0 +1,67 @@
+---
+# Java Configuration
+java_version: "17"
+java_home: "/usr/lib/jvm/java-17-openjdk-amd64"
+
+# Python Configuration
+python_version: "3.10"
+
+# Application Configuration
+app_user: "appuser"
+app_group: "appuser"
+app_directories:
+  - /opt/application
+  - /var/log/application
+  - /etc/application
+  - /opt/scripts
+
+# Service Configuration
+service_name: "ami"
+service_port: 8080
+
+# Packages to Install
+packages_base:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - wget
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  - unzip
+  - jq
+  - htop
+  - net-tools
+
+packages_java:
+  - openjdk-17-jre-headless
+
+packages_tools:
+  - mysql-client
+  - postgresql-client
+  - redis-tools
+
+packages_all: "{{ packages_base + packages_java + packages_tools }}"
+
+# Packages to Remove (cleanup)
+packages_to_remove:
+  - build-essential
+  - linux-headers-{{ ansible_kernel }}
+  - snapd
+  - ubuntu-server
+  - cloud-init
+  - landscape-common
+
+# AWS CLI Configuration
+aws_cli_version: "2"
+aws_cli_url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+
+# Cleanup Settings
+cleanup_enabled: true
+cleanup_logs: true
+cleanup_temp: true
+zero_disk: true
+
+# Security Settings
+ssh_password_auth: false
+root_login: false
