@@ -51,6 +51,11 @@ variable "db_password" {
   sensitive = true
 }
 
+variable "eureka_ip" {
+  type    = string
+  default = "localhost"
+}
+
 variable "eureka_port" {
   type    = string
   default = "8761"
@@ -65,8 +70,9 @@ source "amazon-ebs" "service2" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
-  source_ami      = "ami-0c7217cdde317cfec"  # Ubuntu 22.04
+  source_ami      = var.source_ami  # Use variable, not hardcoded
   ssh_username    = "ubuntu"
+  ssh_timeout     = "10m"
 }
 
 # Build
@@ -85,6 +91,7 @@ build {
       "DB_NAME=${var.db_name}",
       "DB_USERNAME=${var.db_username}",
       "DB_PASSWORD=${var.db_password}",
+      "EUREKA_IP=${var.eureka_ip}",
       "EUREKA_PORT=${var.eureka_port}"
     ]
   }
