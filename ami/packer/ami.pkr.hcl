@@ -7,17 +7,25 @@ packer {
   }
 }
 
+# Read variables from Ansible YAML file
+locals {
+  # This requires yamldecode function (Packer 1.7+)
+  ansible_vars = yamldecode(file("./ansible/vars/ami.yml"))
+}
+
 variable "service_name" {
-  type = string
+  type    = string
+  default = local.ansible_vars.service_name  # Read from Ansible vars
 }
 
 variable "service_version" {
-  type = string
+  type    = string
+  default = "1.0.0"  # Still need to pass from Jenkins
 }
 
 variable "source_ami" {
-  description = "Base AMI ID to use for the build"
-  type        = string
+  type    = string
+  default = "ami-0c7217bde2a952dfe"
 }
 
 source "amazon-ebs" "custom-ami" {
@@ -32,7 +40,6 @@ source "amazon-ebs" "custom-ami" {
     Service     = var.service_name
     Version     = var.service_version
     CreatedBy   = "Packer"
-    Environment = "production"
   }
 }
 
@@ -43,8 +50,7 @@ build {
     playbook_file   = "./ansible/playbook-ami.yml"
     extra_arguments = ["--verbose"]
     ansible_env_vars = [
-      "ANSIBLE_HOST_KEY_CHECKING=False",
-      "ANSIBLE_SSH_RETRIES=3"
+      "ANSIBLE_HOST_KEY_CHECKING=False"
     ]
   }
 }

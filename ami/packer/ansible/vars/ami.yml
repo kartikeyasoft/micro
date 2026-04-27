@@ -6,18 +6,8 @@ java_home: "/usr/lib/jvm/java-17-openjdk-amd64"
 # Python Configuration
 python_version: "3.10"
 
-# Application Configuration
-app_user: "appuser"
-app_group: "appuser"
-app_directories:
-  - /opt/application
-  - /var/log/application
-  - /etc/application
-  - /opt/scripts
-
 # Service Configuration
 service_name: "ami"
-service_port: 8080
 
 # Packages to Install
 packages_base:
