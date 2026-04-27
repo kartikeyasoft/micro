@@ -13,35 +13,10 @@
     db_name: "{{ lookup('env', 'DB_NAME') }}"
     db_username: "{{ lookup('env', 'DB_USERNAME') }}"
     db_password: "{{ lookup('env', 'DB_PASSWORD') }}"
+    eureka_ip: "{{ lookup('env', 'EUREKA_IP') }}"
     eureka_port: "{{ lookup('env', 'EUREKA_PORT') | default('8761') }}"
 
   tasks:
-    # - name: Update apt cache
-    #   apt:
-    #     update_cache: yes
-    #     cache_valid_time: 3600
-
-    # - name: Install OpenJDK 17
-    #   apt:
-    #     name: openjdk-17-jre-headless
-    #     state: present
-    #     update_cache: yes
-    #     force: yes
-
-    # - name: Install MySQL client for debugging
-    #   apt:
-    #     name: mysql-client
-    #     state: present
-
-    # - name: Install AWS CLI for Parameter Store access
-    #   apt:
-    #     name: awscli
-    #     state: present
-
-    - name: Display Java version
-      debug:
-        msg: "Java Version: {{ java_version.stderr | default('Java not found - will install') }}"
-
     - name: Create service2 user
       user:
         name: "{{ app_user }}"
@@ -88,7 +63,7 @@
           spring.servlet.multipart.max-request-size=5MB
           
           # Eureka Configuration - Read from environment variable
-          eureka.client.service-url.defaultZone=${EUREKA_URL:-http://localhost:{{ eureka_port }}/eureka/}
+          eureka.client.service-url.defaultZone=${EUREKA_URL:-http://{{ eureka_ip }}:{{ eureka_port }}/eureka/}
           eureka.instance.prefer-ip-address=true
           eureka.instance.lease-renewal-interval-in-seconds=30
           eureka.instance.lease-expiration-duration-in-seconds=90
@@ -108,7 +83,7 @@
     - name: Create environment file
       copy:
         content: |
-          EUREKA_URL=http://localhost:{{ eureka_port }}/eureka/
+          EUREKA_URL=http://localhost:8761/eureka/
           SERVER_PORT={{ service_port }}
           SPRING_APP_NAME={{ app_name }}
           DB_URL=jdbc:mysql://{{ db_host }}:{{ db_port }}/{{ db_name }}?useSSL=false&serverTimezone=UTC
@@ -200,28 +175,21 @@
 
     - name: Clean up logs before AMI creation
       shell: |
-        # Clear systemd journals
         journalctl --rotate
         journalctl --vacuum-time=1s
         rm -rf /var/log/journal/*
-        
-        # Clear system logs
         truncate -s 0 /var/log/syslog 2>/dev/null || true
         truncate -s 0 /var/log/auth.log 2>/dev/null || true
         truncate -s 0 /var/log/cloud-init.log 2>/dev/null || true
         truncate -s 0 /var/log/cloud-init-output.log 2>/dev/null || true
-        
-        # Clear bash history
         rm -f /root/.bash_history
         rm -f /home/ubuntu/.bash_history
-        
-        # Clear tmp files
         rm -rf /tmp/*
         rm -rf /var/tmp/*
-        
-        # Clear apt cache
         apt-get clean
         apt-get autoclean
+        dd if=/dev/zero of=/zero.fill bs=1M 2>/dev/null || true
+        rm -f /zero.fill
       ignore_errors: yes
       args:
         warn: no
@@ -235,5 +203,5 @@
           Service Name: {{ app_name }}
           Service Port: {{ service_port }}
           Database Host: {{ db_host }}
-          Eureka URL: Will be updated dynamically from SSM at boot
+          Eureka URL: Will be discovered dynamically via SSM at boot
           ========================================

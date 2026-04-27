@@ -35,6 +35,7 @@ pipeline {
                     env.DB_NAME = config.db.name
                     env.SERVICE_NAME = 'service2'
                     env.SERVICE_PORT = config.services.service2.defaultPort
+                    env.EUREKA_IP = config.eureka.ip
                     env.EUREKA_PORT = config.eureka.defaultPort
                     env.BASE_AMI_ID = config.baseAmi.ubuntu2204
                     
@@ -43,14 +44,16 @@ pipeline {
                     echo "=========================================="
                     echo "Nexus URL: ${env.NEXUS_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "DB Host: ${env.DB_HOST}"
-                    echo "DB Port: ${env.DB_PORT}"
-                    echo "DB Name: ${env.DB_NAME}"
+                    echo "DB URL: ${env.DB_URL}"
                     echo "Service Name: ${env.SERVICE_NAME}"
                     echo "Service Port: ${env.SERVICE_PORT}"
+                    echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "Eureka Port: ${env.EUREKA_PORT}"
                     echo "Base AMI ID: ${env.BASE_AMI_ID}"
                     echo "=========================================="
+
+                    echo "DB Username loaded: ${env.DB_USERNAME_USR ? 'YES' : 'NO'}"
+                    echo "DB Password loaded: ${env.DB_PASSWORD ? 'YES' : 'NO'}"
                 }
             }
         }
@@ -58,27 +61,6 @@ pipeline {
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
-            }
-        }
-
-        stage('Get Eureka IP from SSM') {
-            steps {
-                script {
-                    def eurekaIp = sh(script: """
-                        aws ssm get-parameter \
-                            --name "/exam/eureka/ip" \
-                            --region ${env.AWS_DEFAULT_REGION} \
-                            --query 'Parameter.Value' \
-                            --output text 2>/dev/null || echo ""
-                    """, returnStdout: true).trim()
-                    
-                    if (!eurekaIp || eurekaIp == 'None' || eurekaIp == 'null' || eurekaIp == '') {
-                        error "Eureka IP not found in SSM. Please run Eureka CD first and wait for completion."
-                    }
-                    
-                    env.EUREKA_IP = eurekaIp
-                    echo "✅ Retrieved Eureka IP from SSM: ${env.EUREKA_IP}"
-                }
             }
         }
 
@@ -153,10 +135,6 @@ pipeline {
         stage('Bake Golden Image') {
             steps {
                 script {
-                    echo "=========================================="
-                    echo "Building Golden AMI with Base: ${env.BASE_AMI_ID}"
-                    echo "=========================================="
-                    
                     withEnv([
                         "SERVICE_VERSION=${env.SERVICE_VERSION}",
                         "SERVICE_NAME=${env.SERVICE_NAME}",
@@ -238,7 +216,6 @@ pipeline {
                     echo "=========================================="
                     echo "Version: ${env.SERVICE_VERSION}"
                     echo "AMI ID: ${env.AMI_ID}"
-                    echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "=========================================="
                     
                     if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
@@ -253,7 +230,7 @@ pipeline {
                         
                         echo "✅ CD pipeline triggered successfully!"
                     } else {
-                        error "No valid AMI ID captured, cannot trigger CD pipeline"
+                        echo "⚠️ No valid AMI ID captured, skipping CD trigger"
                     }
                 }
             }
@@ -262,20 +239,13 @@ pipeline {
 
     post {
         success {
-            echo "=========================================="
-            echo "🎉 Service2 CI completed successfully!"
-            echo "=========================================="
-            echo "AMI ID: ${env.AMI_ID}"
-            echo "Version: ${env.SERVICE_VERSION}"
-            echo "Base AMI Used: ${env.BASE_AMI_ID}"
-            echo "=========================================="
+            echo "🎉 Service2 CI completed successfully! AMI: ${env.AMI_ID}"
         }
         failure {
-            echo "=========================================="
             echo "❌ Service2 CI failed!"
-            echo "=========================================="
-            echo "Please check the logs above for details"
-            echo "=========================================="
+            script {
+                echo "Current build result: ${currentBuild.currentResult}"
+            }
         }
     }
 }

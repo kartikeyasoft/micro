@@ -11,40 +11,69 @@ packer {
   }
 }
 
-# Variables
-variable "service_name" { type = string }
-variable "service_version" { type = string }
-variable "service_port" { type = string }
-variable "nexus_url" { type = string }
-variable "db_host" { type = string }
-variable "db_port" { type = string }
-variable "db_name" { type = string }
-variable "db_username" { type = string }
-variable "db_password" { type = string }
-variable "eureka_ip" { type = string }
-variable "eureka_port" { type = string }
-variable "source_ami" { type = string }
+# Declare all variables
+variable "service_name" {
+  type = string
+}
 
-# Source AMI - Creates a NEW custom AMI
+variable "service_version" {
+  type = string
+}
+
+variable "service_port" {
+  type    = string
+  default = "9002"
+}
+
+variable "nexus_url" {
+  type = string
+}
+
+variable "db_host" {
+  type = string
+}
+
+variable "db_port" {
+  type    = string
+  default = "3306"
+}
+
+variable "db_name" {
+  type = string
+}
+
+variable "db_username" {
+  type = string
+}
+
+variable "db_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "eureka_ip" {
+  type    = string
+  default = "localhost"
+}
+
+variable "source_ami" {
+  description = "Base AMI ID to use for the build"
+  type        = string
+}
+
+variable "eureka_port" {
+  type    = string
+  default = "8761"
+}
+
 source "amazon-ebs" "service2" {
-  ami_name        = "myapp-${var.service_name}-v${var.service_version}-{{timestamp}}"
+  ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
   source_ami      = var.source_ami
   ssh_username    = "ubuntu"
-  ssh_timeout     = "10m"
-  
-  tags = {
-    Name        = "myapp-${var.service_name}-v${var.service_version}"
-    Service     = var.service_name
-    Version     = var.service_version
-    SourceAMI   = var.source_ami
-    BuiltBy     = "Packer"
-    BuildDate   = "{{timestamp}}"
-  }
 }
 
-# Build
 build {
   sources = ["source.amazon-ebs.service2"]
 
