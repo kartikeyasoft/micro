@@ -7,10 +7,25 @@ packer {
   }
 }
 
-variable "service_name" { type = string }
-variable "service_version" { type = string }
-variable "source_ami" { type = string }
-variable "aws_region" { type = string }
+variable "service_name" {
+  type    = string
+  default = "ami"
+}
+
+variable "service_version" {
+  type    = string
+  default = "1.0.0"
+}
+
+variable "source_ami" {
+  type    = string
+  default = "ami-053b0d53c279acc90"
+}
+
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
 
 source "amazon-ebs" "ami" {
   ami_name      = "${var.service_name}-${var.service_version}"
