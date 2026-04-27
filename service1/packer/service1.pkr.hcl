@@ -56,6 +56,11 @@ variable "eureka_ip" {
   default = "localhost"
 }
 
+variable "source_ami" {
+  description = "Base AMI ID to use for the build"
+  type        = string
+}
+
 variable "eureka_port" {
   type    = string
   default = "8761"
@@ -65,7 +70,7 @@ source "amazon-ebs" "service1" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
-  source_ami      = "ami-0c7217cdde317cfec"
+  source_ami      = var.source_ami
   ssh_username    = "ubuntu"
 }
 

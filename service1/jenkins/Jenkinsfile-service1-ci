@@ -16,7 +16,7 @@ pipeline {
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
         
-        // Database credentials from Jenkins - FIXED
+        // Database credentials from Jenkins
         DB_USERNAME = credentials('db-username')  // This creates DB_USERNAME_USR and DB_USERNAME_PSW
         DB_PASSWORD = credentials('db-password')
     }
@@ -39,6 +39,8 @@ pipeline {
                     env.SERVICE_PORT = config.services.service1.defaultPort
                     env.EUREKA_IP = config.eureka.ip
                     env.EUREKA_PORT = config.eureka.defaultPort
+                    // Get Base AMI ID from shared library
+                    env.BASE_AMI_ID = config.baseAmi.ubuntu2204
                     
                     echo "=========================================="
                     echo "Service1 CI Pipeline"
@@ -50,6 +52,7 @@ pipeline {
                     echo "Service Port: ${env.SERVICE_PORT}"
                     echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "Eureka Port: ${env.EUREKA_PORT}"
+                    echo "Base AMI ID: ${env.BASE_AMI_ID}"
                     echo "=========================================="
 
                     echo "DB Username loaded: ${env.DB_USERNAME_USR ? 'YES' : 'NO'}"
@@ -132,7 +135,7 @@ pipeline {
             }
         }
 
-       stage('Bake Golden Image') {
+        stage('Bake Golden Image') {
             steps {
                 script {
                     withEnv([
@@ -143,9 +146,10 @@ pipeline {
                         "DB_HOST=${env.DB_HOST}",
                         "DB_PORT=${env.DB_PORT}",
                         "DB_NAME=${env.DB_NAME}",
-                        "DB_USERNAME=${env.DB_USERNAME_USR}",  // FIXED: Changed from DB_USERNAME_CREDS_USR to DB_USERNAME_USR
+                        "DB_USERNAME=${env.DB_USERNAME_USR}",
                         "DB_PASSWORD=${env.DB_PASSWORD}",
-                        "EUREKA_PORT=${env.EUREKA_PORT}"
+                        "EUREKA_PORT=${env.EUREKA_PORT}",
+                        "BASE_AMI_ID=${env.BASE_AMI_ID}"
                     ]) {
                         dir('service1/packer') {
                             sh '''
@@ -160,6 +164,7 @@ pipeline {
                                 echo "DB Port: ${DB_PORT}"
                                 echo "DB Name: ${DB_NAME}"
                                 echo "Eureka Port: ${EUREKA_PORT}"
+                                echo "Base AMI ID: ${BASE_AMI_ID}"
                                 echo "=========================================="
                                 
                                 packer init service1.pkr.hcl
@@ -175,6 +180,7 @@ pipeline {
                                     -var "db_username=${DB_USERNAME}" \
                                     -var "db_password=${DB_PASSWORD}" \
                                     -var "eureka_port=${EUREKA_PORT}" \
+                                    -var "source_ami=${BASE_AMI_ID}" \
                                     service1.pkr.hcl 2>&1 | tee build-output.txt
                                 
                                 AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
@@ -186,6 +192,7 @@ pipeline {
                                 
                                 echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
                                 echo "✅ Successfully created AMI: $AMI_ID"
+                                echo "✅ Used Base AMI: ${BASE_AMI_ID}"
                             '''
                             
                             script {
@@ -200,8 +207,6 @@ pipeline {
                 }
             }
         }    
- 
-      
 
         stage('Trigger CD Pipeline') {
             steps {
@@ -230,7 +235,7 @@ pipeline {
                 }
             }
         }
-}
+    }
 
     post {
         success {
