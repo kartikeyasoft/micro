@@ -27,6 +27,56 @@
     #   apt:
     #     name: awscli
     #     state: present
+    - name: Check if Java is installed
+      command: which java
+      register: java_path
+      failed_when: false
+      changed_when: false
+
+    - name: Display Java path
+      debug:
+        msg: "Java path: {{ java_path.stdout | default('Java NOT found') }}"
+
+    - name: Check Java version
+      command: java -version
+      register: java_version
+      failed_when: false
+      changed_when: false
+
+    - name: Display Java version
+      debug:
+        msg: "Java version: {{ java_version.stderr | default('Java version check failed') }}"
+
+    - name: Check JAVA_HOME
+      command: echo $JAVA_HOME
+      register: java_home
+      failed_when: false
+      changed_when: false
+
+    - name: Display JAVA_HOME
+      debug:
+        msg: "JAVA_HOME: {{ java_home.stdout | default('JAVA_HOME not set') }}"
+
+    - name: Find all Java installations
+      shell: find /usr/lib/jvm -name "java" -type f 2>/dev/null || echo "No Java found"
+      register: java_locations
+      failed_when: false
+      changed_when: false
+
+    - name: Display Java locations
+      debug:
+        msg: "Java locations: {{ java_locations.stdout_lines }}"
+
+    - name: Check system facts for Java
+      debug:
+        msg: |
+          =========================================
+          SYSTEM JAVA INFORMATION
+          =========================================
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Architecture: {{ ansible_architecture }}
+          Java available: {{ java_path.stdout | default('NO') }}
+          =========================================
 
     - name: Create gateway user
       user:
