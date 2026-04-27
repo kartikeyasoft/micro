@@ -148,8 +148,12 @@ pipeline {
             steps {
                 script {
                     dir('redis/terraform') {
+                        // Get the private IP of the Redis instance
                         def privateIp = sh(script: "terraform output -raw redis_private_ip", returnStdout: true).trim()
                         
+                        echo "Redis Private IP: ${privateIp}"
+                        
+                        // Store Redis IP in Parameter Store
                         sh """
                             aws ssm put-parameter \
                                 --name "/exam/redis/ip" \
@@ -158,6 +162,7 @@ pipeline {
                                 --overwrite
                         """
                         
+                        // Store Redis Port in Parameter Store
                         sh """
                             aws ssm put-parameter \
                                 --name "/exam/redis/port" \
@@ -167,7 +172,7 @@ pipeline {
                         """
                         
                         echo "=========================================="
-                        echo "✅ Redis Registration Info Stored"
+                        echo "✅ Redis Registration Info Stored in SSM"
                         echo "=========================================="
                         echo "Redis IP: ${privateIp}"
                         echo "Redis Port: ${env.SERVICE_PORT}"
@@ -182,6 +187,7 @@ pipeline {
             when { expression { params.ACTION == 'destroy' } }
             steps {
                 script {
+                    // Clean up Parameter Store entries on destroy
                     sh """
                         aws ssm delete-parameter \
                             --name "/exam/redis/ip" 2>/dev/null || true
@@ -212,8 +218,15 @@ pipeline {
                         echo "Service Port: ${env.SERVICE_PORT}"
                         echo "Redis API URL: http://${public_ip}:${env.SERVICE_PORT}"
                         echo "Eureka URL: ${env.EUREKA_URL}"
+                        echo "SSM Path: /exam/redis/ip"
                         echo "Redis URL for other services: http://${private_ip}:${env.SERVICE_PORT}/redis"
                         echo "=========================================="
+                        
+                        // Verify SSM parameter was created
+                        sh """
+                            echo "Verifying SSM parameter..."
+                            aws ssm get-parameter --name "/exam/redis/ip" --query 'Parameter.Value' --output text
+                        """
                     }
                 }
             }
