@@ -7,7 +7,6 @@ pipeline {
         AWS_DEFAULT_REGION    = 'us-east-1'
         SERVICE_NAME          = 'ami'
         SERVICE_VERSION       = "${BUILD_NUMBER}"
-        BASE_AMI_ID           = 'ami-0c7217bde2a952dfe'
     }
 
     stages {
@@ -17,29 +16,44 @@ pipeline {
             }
         }
 
+        stage('Update Packer Variables') {
+            steps {
+                dir('ami/packer') {
+                    sh """
+                        # Update the variables file with current build number
+                        cat > variables.pkrvars.hcl << EOF
+                        service_name     = "${SERVICE_NAME}"
+                        service_version  = "${SERVICE_VERSION}"
+                        source_ami       = "ami-053b0d53c279acc90"
+                        aws_region       = "${AWS_DEFAULT_REGION}"
+                        EOF
+                        
+                        echo "=========================================="
+                        echo "Updated variables.pkrvars.hcl:"
+                        echo "=========================================="
+                        cat variables.pkrvars.hcl
+                        echo "=========================================="
+                    """
+                }
+            }
+        }
+
         stage('Create AMI') {
             steps {
                 dir('ami/packer') {
                     sh """
-                        echo "=========================================="
-                        echo "Building custom AMI from base: ${BASE_AMI_ID}"
-                        echo "=========================================="
+                        # Build using the var-file
+                        packer build -var-file="variables.pkrvars.hcl" ami.pkr.hcl 2>&1 | tee build-output.txt
                         
-                        packer build \
-                            -var "service_name=${SERVICE_NAME}" \
-                            -var "service_version=${SERVICE_VERSION}" \
-                            -var "source_ami=${BASE_AMI_ID}" \
-                            -var "aws_region=${AWS_DEFAULT_REGION}" \
-                            ami.pkr.hcl 2>&1 | tee build-output.txt
-                        
-                        NEW_AMI_ID=\$(grep -E "us-east-1: ami-" build-output.txt | grep -oE 'ami-[a-f0-9]{8,}' | head -1)
+                        # Extract the new AMI ID
+                        NEW_AMI_ID=\$(grep -E "${AWS_DEFAULT_REGION}: ami-" build-output.txt | grep -oE 'ami-[a-f0-9]{8,}' | head -1)
                         
                         if [ -z "\$NEW_AMI_ID" ]; then
-                            echo "ERROR: Failed to extract new AMI ID from build output"
+                            echo "ERROR: Failed to extract new AMI ID"
                             exit 1
                         fi
                         
-                        echo "NEW_AMI_ID=\${NEW_AMI_ID}" > ami.properties
+                        echo "AMI_ID=\${NEW_AMI_ID}" > ami.properties
                         echo "✅ Created New AMI: \${NEW_AMI_ID}"
                     """
                 }
@@ -59,26 +73,9 @@ pipeline {
                             --tags \
                                 Key=Name,Value=${SERVICE_NAME}-${SERVICE_VERSION} \
                                 Key=Service,Value=${SERVICE_NAME} \
-                                Key=Version,Value=${SERVICE_VERSION} \
-                                Key=SourceAMI,Value=${BASE_AMI_ID} \
-                                Key=BuildNumber,Value=${BUILD_NUMBER}
+                                Key=Version,Value=${SERVICE_VERSION}
                         
-                        echo "✅ Tagged new AMI: ${env.AMI_ID}"
-                    """
-                }
-            }
-        }
-        
-        stage('Verify AMI') {
-            steps {
-                script {
-                    sh """
-                        echo "Waiting for AMI to become available..."
-                        aws ec2 wait image-available \
-                            --image-ids ${env.AMI_ID} \
-                            --region ${AWS_DEFAULT_REGION}
-                        
-                        echo "✅ AMI is verified and available"
+                        echo "✅ Tagged AMI: ${env.AMI_ID}"
                     """
                 }
             }
@@ -87,38 +84,16 @@ pipeline {
 
     post {
         success {
-            script {
-                echo "=========================================="
-                echo "🎉 NEW AMI CREATED SUCCESSFULLY!"
-                echo "=========================================="
-                echo "New AMI ID: ${env.AMI_ID}"
-                echo "Name: ${SERVICE_NAME}-${SERVICE_VERSION}"
-                echo "Region: ${AWS_DEFAULT_REGION}"
-                echo "Build: ${BUILD_NUMBER}"
-                echo "Source AMI: ${BASE_AMI_ID}"
-                echo "=========================================="
-                echo ""
-                echo "AWS Console URL:"
-                echo "https://console.aws.amazon.com/ec2/home?region=${AWS_DEFAULT_REGION}#ImageDetails:imageId=${env.AMI_ID}"
-                echo "=========================================="
-            }
+            echo "=========================================="
+            echo "🎉 AMI CREATED SUCCESSFULLY!"
+            echo "=========================================="
+            echo "AMI ID: ${env.AMI_ID}"
+            echo "Name: ${SERVICE_NAME}-${SERVICE_VERSION}"
+            echo "Region: ${AWS_DEFAULT_REGION}"
+            echo "=========================================="
         }
         failure {
-            echo "=========================================="
-            echo "❌ AMI CREATION FAILED!"
-            echo "=========================================="
-            echo "Service: ${SERVICE_NAME}"
-            echo "Build: ${BUILD_NUMBER}"
-            echo "Source AMI: ${BASE_AMI_ID}"
-            echo "=========================================="
-        }
-        always {
-            script {
-                dir('ami/packer') {
-                    archiveArtifacts artifacts: 'build-output.txt', fingerprint: true, allowEmptyArchive: true
-                    archiveArtifacts artifacts: 'ami.properties', fingerprint: true, allowEmptyArchive: true
-                }
-            }
+            echo "❌ AMI creation failed!"
         }
     }
 }
