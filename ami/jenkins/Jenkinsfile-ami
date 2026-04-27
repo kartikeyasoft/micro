@@ -7,7 +7,7 @@ pipeline {
         AWS_DEFAULT_REGION    = 'us-east-1'
         SERVICE_NAME          = 'ami'
         SERVICE_VERSION       = "${BUILD_NUMBER}"
-        BASE_AMI_ID           = 'ami-0c7217bde2a952dfe'  # Valid Ubuntu 22.04
+        BASE_AMI_ID           = 'ami-0c7217bde2a952dfe'
     }
 
     stages {
@@ -25,7 +25,6 @@ pipeline {
                         echo "Building custom AMI from base: ${BASE_AMI_ID}"
                         echo "=========================================="
                         
-                        # Build the AMI
                         packer build \
                             -var "service_name=${SERVICE_NAME}" \
                             -var "service_version=${SERVICE_VERSION}" \
@@ -33,20 +32,15 @@ pipeline {
                             -var "aws_region=${AWS_DEFAULT_REGION}" \
                             ami.pkr.hcl 2>&1 | tee build-output.txt
                         
-                        # Extract the NEWLY CREATED AMI ID (not the base AMI)
-                        # Look for "us-east-1: ami-" pattern which indicates successful creation
                         NEW_AMI_ID=\$(grep -E "us-east-1: ami-" build-output.txt | grep -oE 'ami-[a-f0-9]{8,}' | head -1)
                         
                         if [ -z "\$NEW_AMI_ID" ]; then
                             echo "ERROR: Failed to extract new AMI ID from build output"
-                            echo "Searching for AMI in output..."
-                            grep -E "ami-" build-output.txt || true
                             exit 1
                         fi
                         
                         echo "NEW_AMI_ID=\${NEW_AMI_ID}" > ami.properties
                         echo "✅ Created New AMI: \${NEW_AMI_ID}"
-                        echo "=========================================="
                     """
                 }
             }
@@ -59,8 +53,6 @@ pipeline {
                     env.AMI_ID = amiProps.split('=')[1].trim()
                     
                     sh """
-                        echo "Tagging new AMI: ${env.AMI_ID}"
-                        
                         aws ec2 create-tags \
                             --resources ${env.AMI_ID} \
                             --region ${AWS_DEFAULT_REGION} \
@@ -69,10 +61,9 @@ pipeline {
                                 Key=Service,Value=${SERVICE_NAME} \
                                 Key=Version,Value=${SERVICE_VERSION} \
                                 Key=SourceAMI,Value=${BASE_AMI_ID} \
-                                Key=BuildNumber,Value=${BUILD_NUMBER} \
-                                Key=CreatedBy,Value=Jenkins
+                                Key=BuildNumber,Value=${BUILD_NUMBER}
                         
-                        echo "✅ Successfully tagged AMI: ${env.AMI_ID}"
+                        echo "✅ Tagged new AMI: ${env.AMI_ID}"
                     """
                 }
             }
@@ -82,26 +73,12 @@ pipeline {
             steps {
                 script {
                     sh """
-                        echo "=========================================="
-                        echo "Verifying AMI: ${env.AMI_ID}"
-                        echo "=========================================="
-                        
-                        # Wait for AMI to be available
                         echo "Waiting for AMI to become available..."
                         aws ec2 wait image-available \
                             --image-ids ${env.AMI_ID} \
                             --region ${AWS_DEFAULT_REGION}
                         
-                        # Get AMI details
-                        aws ec2 describe-images \
-                            --image-ids ${env.AMI_ID} \
-                            --region ${AWS_DEFAULT_REGION} \
-                            --query 'Images[0].[ImageId,Name,State,CreationDate,Description]' \
-                            --output table
-                        
-                        echo "=========================================="
                         echo "✅ AMI is verified and available"
-                        echo "=========================================="
                     """
                 }
             }
@@ -111,34 +88,18 @@ pipeline {
     post {
         success {
             script {
-                // Get AMI size
-                def amiSize = sh(script: """
-                    aws ec2 describe-images \
-                        --image-ids ${env.AMI_ID} \
-                        --region ${AWS_DEFAULT_REGION} \
-                        --query 'Images[0].BlockDeviceMappings[0].Ebs.VolumeSize' \
-                        --output text 2>/dev/null || echo "N/A"
-                """, returnStdout: true).trim()
-                
                 echo "=========================================="
                 echo "🎉 NEW AMI CREATED SUCCESSFULLY!"
                 echo "=========================================="
-                echo "📋 New AMI ID: ${env.AMI_ID}"
-                echo "🏷️  Name: ${SERVICE_NAME}-${SERVICE_VERSION}"
-                echo "🌍 Region: ${AWS_DEFAULT_REGION}"
-                echo "💾 Size: ${amiSize} GB"
-                echo "🔨 Build: ${BUILD_NUMBER}"
-                echo "📦 Source AMI: ${BASE_AMI_ID}"
+                echo "New AMI ID: ${env.AMI_ID}"
+                echo "Name: ${SERVICE_NAME}-${SERVICE_VERSION}"
+                echo "Region: ${AWS_DEFAULT_REGION}"
+                echo "Build: ${BUILD_NUMBER}"
+                echo "Source AMI: ${BASE_AMI_ID}"
                 echo "=========================================="
                 echo ""
-                echo "🔗 AWS Console URL:"
+                echo "AWS Console URL:"
                 echo "https://console.aws.amazon.com/ec2/home?region=${AWS_DEFAULT_REGION}#ImageDetails:imageId=${env.AMI_ID}"
-                echo ""
-                echo "📝 To launch an instance from this AMI:"
-                echo "aws ec2 run-instances --image-id ${env.AMI_ID} --region ${AWS_DEFAULT_REGION} --instance-type t3.micro"
-                echo ""
-                echo "📝 To share this AMI with another account:"
-                echo "aws ec2 modify-image-attribute --image-id ${env.AMI_ID} --launch-permission \"Add=[{UserId=123456789012}]\""
                 echo "=========================================="
             }
         }
@@ -150,18 +111,8 @@ pipeline {
             echo "Build: ${BUILD_NUMBER}"
             echo "Source AMI: ${BASE_AMI_ID}"
             echo "=========================================="
-            echo ""
-            echo "Troubleshooting steps:"
-            echo "1. Verify base AMI exists:"
-            echo "   aws ec2 describe-images --image-ids ${BASE_AMI_ID} --region ${AWS_DEFAULT_REGION}"
-            echo ""
-            echo "2. Check AWS credentials permissions"
-            echo "3. Verify Packer template syntax"
-            echo "4. Check build-output.txt for detailed errors"
-            echo "=========================================="
         }
         always {
-            // Archive build output for debugging
             script {
                 dir('ami/packer') {
                     archiveArtifacts artifacts: 'build-output.txt', fingerprint: true, allowEmptyArchive: true
