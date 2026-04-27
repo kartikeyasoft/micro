@@ -31,7 +31,9 @@ pipeline {
                     env.AWS_DEFAULT_REGION = config.aws.region
                     env.SERVICE_NAME = 'gateway'
                     env.SERVICE_PORT = config.services.gateway.defaultPort
+                    env.EUREKA_IP = config.eureka.ip
                     env.EUREKA_PORT = config.eureka.defaultPort
+                    env.BASE_AMI_ID = config.baseAmi.ubuntu2204
                     
                     echo "=========================================="
                     echo "Gateway CI Pipeline"
@@ -40,7 +42,9 @@ pipeline {
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
                     echo "Service Name: ${env.SERVICE_NAME}"
                     echo "Service Port: ${env.SERVICE_PORT}"
+                    echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "Eureka Port: ${env.EUREKA_PORT}"
+                    echo "Base AMI ID: ${env.BASE_AMI_ID}"
                     echo "=========================================="
                 }
             }
@@ -128,7 +132,9 @@ pipeline {
                         "SERVICE_NAME=${env.SERVICE_NAME}",
                         "SERVICE_PORT=${env.SERVICE_PORT}",
                         "NEXUS_URL=${env.NEXUS_URL}",
-                        "EUREKA_PORT=${env.EUREKA_PORT}"
+                        "EUREKA_IP=${env.EUREKA_IP}",
+                        "EUREKA_PORT=${env.EUREKA_PORT}",
+                        "BASE_AMI_ID=${env.BASE_AMI_ID}"
                     ]) {
                         dir('gateway/packer') {
                             sh '''
@@ -139,7 +145,9 @@ pipeline {
                                 echo "Service Name: ${SERVICE_NAME}"
                                 echo "Service Version: ${SERVICE_VERSION}"
                                 echo "Service Port: ${SERVICE_PORT}"
+                                echo "Eureka IP: ${EUREKA_IP}"
                                 echo "Eureka Port: ${EUREKA_PORT}"
+                                echo "Base AMI ID: ${BASE_AMI_ID}"
                                 echo "=========================================="
                                 
                                 packer init gateway.pkr.hcl
@@ -149,7 +157,9 @@ pipeline {
                                     -var "service_version=${SERVICE_VERSION}" \
                                     -var "service_port=${SERVICE_PORT}" \
                                     -var "nexus_url=${NEXUS_URL}" \
+                                    -var "eureka_ip=${EUREKA_IP}" \
                                     -var "eureka_port=${EUREKA_PORT}" \
+                                    -var "source_ami=${BASE_AMI_ID}" \
                                     gateway.pkr.hcl 2>&1 | tee build-output.txt
                                 
                                 AMI_ID=$(grep -oE 'ami-[a-f0-9]{17}' build-output.txt | tail -1)
@@ -161,6 +171,7 @@ pipeline {
                                 
                                 echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
                                 echo "✅ Successfully created AMI: $AMI_ID"
+                                echo "✅ Used Base AMI: ${BASE_AMI_ID}"
                             '''
                             
                             script {
