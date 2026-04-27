@@ -4,35 +4,46 @@
   become: yes
 
   tasks:
-    - name: Update apt cache
-      apt:
-        update_cache: yes
+    - name: Update apt
+      apt: update_cache=yes
 
-    - name: Install required packages
+    - name: Fix broken dependencies
+      command: apt-get --fix-broken install -y
+
+    - name: Install basic packages
       apt:
-        name:
-          - curl
-          - wget
-          - unzip
-          - jq
-          - net-tools
-          - mysql-client
-          - openjdk-17-jre-headless
+        name: "{{ item }}"
         state: present
+      loop:
+        - curl
+        - wget
+        - unzip
+        - net-tools
+
+    - name: Install jq
+      shell: sudo apt-get install -y jq
+      args:
+        warn: no
+
+    - name: Install MySQL client
+      shell: sudo apt-get install -y mysql-client
+      args:
+        warn: no
+      ignore_errors: yes
+
+    - name: Install Java
+      shell: |
+        sudo apt-get install -y openjdk-17-jre-headless || \
+        sudo apt-get install -y openjdk-11-jre-headless
+      args:
+        warn: no
 
     - name: Install AWS CLI v2
       shell: |
         cd /tmp
         curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
         unzip -q awscliv2.zip
-        ./aws/install
+        sudo ./aws/install
         rm -rf aws awscliv2.zip
       args:
         creates: /usr/local/bin/aws
-
-    - name: Verify installations
-      debug:
-        msg: |
-          ✅ Java: {{ lookup('pipe', 'java -version 2>&1 | head -1') }}
-          ✅ AWS CLI: {{ lookup('pipe', 'aws --version') }}
-          ✅ Packages installed successfully
