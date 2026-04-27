@@ -11,7 +11,7 @@ packer {
   }
 }
 
-# Variables
+# Declare all variables
 variable "service_name" {
   type = string
 }
@@ -29,26 +29,30 @@ variable "nexus_url" {
   type = string
 }
 
+variable "eureka_ip" {
+  type    = string
+  default = "localhost"
+}
+
 variable "eureka_port" {
   type    = string
   default = "8761"
 }
 
-variable "redis_port" {
-  type    = string
-  default = "1222"
+variable "source_ami" {
+  description = "Base AMI ID to use for the build"
+  type        = string
 }
 
-# Source AMI
 source "amazon-ebs" "rabbitmq" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
-  source_ami      = "ami-0c7217cdde317cfec"
+  source_ami      = var.source_ami
   ssh_username    = "ubuntu"
+  ssh_timeout     = "10m"
 }
 
-# Build
 build {
   sources = ["source.amazon-ebs.rabbitmq"]
 
@@ -59,8 +63,8 @@ build {
       "SERVICE_VERSION=${var.service_version}",
       "SERVICE_PORT=${var.service_port}",
       "NEXUS_URL=${var.nexus_url}",
-      "EUREKA_PORT=${var.eureka_port}",
-      "REDIS_PORT=${var.redis_port}"
+      "EUREKA_IP=${var.eureka_ip}",
+      "EUREKA_PORT=${var.eureka_port}"
     ]
   }
 }

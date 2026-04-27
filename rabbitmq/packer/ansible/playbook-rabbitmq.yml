@@ -11,27 +11,27 @@
     eureka_port: "{{ lookup('env', 'EUREKA_PORT') | default('8761') }}"
 
   tasks:
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
+    # - name: Update apt cache
+    #   apt:
+    #     update_cache: yes
+    #     cache_valid_time: 3600
 
-    - name: Install OpenJDK 17
-      apt:
-        name: openjdk-17-jre-headless
-        state: present
-        update_cache: yes
-        force: yes
+    # - name: Install OpenJDK 17
+    #   apt:
+    #     name: openjdk-17-jre-headless
+    #     state: present
+    #     update_cache: yes
+    #     force: yes
 
     - name: Install RabbitMQ Server
       apt:
         name: rabbitmq-server
         state: present
 
-    - name: Install AWS CLI for Parameter Store access
-      apt:
-        name: awscli
-        state: present
+    # - name: Install AWS CLI for Parameter Store access
+    #   apt:
+    #     name: awscli
+    #     state: present
 
     - name: Start and enable RabbitMQ
       systemd:
