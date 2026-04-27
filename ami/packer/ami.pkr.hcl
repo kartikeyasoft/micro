@@ -1,3 +1,12 @@
+packer {
+  required_plugins {
+    amazon = {
+      version = ">= 1.2.8"
+      source  = "github.com/hashicorp/amazon"
+    }
+  }
+}
+
 variable "service_name" {
   type = string
 }
@@ -31,10 +40,13 @@ source "amazon-ebs" "ami" {
 build {
   sources = ["source.amazon-ebs.ami"]
 
-  provisioner "ansible" {
-    playbook_file = "./ansible/playbook-ami.yml"
-    ansible_env_vars = [
-      "ANSIBLE_HOST_KEY_CHECKING=False"
+  provisioner "shell" {
+    inline = [
+      "echo 'Starting AMI build...'",
+      "sudo apt-get update",
+      "sudo apt-get install -y openjdk-17-jre-headless curl wget",
+      "sudo systemctl enable ssh",
+      "echo 'AMI build completed at $(date)'"
     ]
   }
 }
