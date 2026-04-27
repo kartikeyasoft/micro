@@ -11,7 +11,7 @@
     </parent>
     <groupId>com.ksapp</groupId>
     <artifactId>eureka</artifactId>
-    <version>1.0.11</version>
+    <version>1.0.1</version>
     <name>eureka-service-registry</name>
     <description>Eureka Server for Service Discovery</description>
 
