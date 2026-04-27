@@ -38,6 +38,10 @@
     #     name: awscli
     #     state: present
 
+    - name: Display Java version
+      debug:
+        msg: "Java Version: {{ java_version.stderr | default('Java not found - will install') }}"
+
     - name: Create service2 user
       user:
         name: "{{ app_user }}"
