@@ -56,6 +56,10 @@ variable "eureka_port" {
   default = "8761"
 }
 
+variable "source_ami" {
+  type = string
+}
+
 # Source AMI
 source "amazon-ebs" "service2" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
