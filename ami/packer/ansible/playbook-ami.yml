@@ -2,11 +2,6 @@
 - name: Provision AMI golden image
   hosts: all
   become: yes
-  vars:
-    app_user: "eureka"
-    app_name: "{{ lookup('env', 'SERVICE_NAME') }}"
-    app_version: "{{ lookup('env', 'SERVICE_VERSION') }}"
-    nexus_url: "{{ lookup('env', 'NEXUS_URL') }}"
 
   tasks:
     - name: Update apt cache
