@@ -65,12 +65,12 @@ variable "source_ami" {
   type = string
 }
 
-# Source AMI
+# Source AMI - USE VARIABLE, NOT HARDCODED
 source "amazon-ebs" "service2" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
-  source_ami      = var.source_ami  # Use variable, not hardcoded
+  source_ami      = var.source_ami  // ← THIS MUST BE var.source_ami
   ssh_username    = "ubuntu"
   ssh_timeout     = "10m"
 }

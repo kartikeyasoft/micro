@@ -43,15 +43,14 @@ pipeline {
                     echo "=========================================="
                     echo "Nexus URL: ${env.NEXUS_URL}"
                     echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-                    echo "DB URL: ${env.DB_URL}"
+                    echo "DB Host: ${env.DB_HOST}"
+                    echo "DB Port: ${env.DB_PORT}"
+                    echo "DB Name: ${env.DB_NAME}"
                     echo "Service Name: ${env.SERVICE_NAME}"
                     echo "Service Port: ${env.SERVICE_PORT}"
                     echo "Eureka Port: ${env.EUREKA_PORT}"
                     echo "Base AMI ID: ${env.BASE_AMI_ID}"
                     echo "=========================================="
-
-                    echo "DB Username loaded: ${env.DB_USERNAME_USR ? 'YES' : 'NO'}"
-                    echo "DB Password loaded: ${env.DB_PASSWORD ? 'YES' : 'NO'}"
                 }
             }
         }
@@ -59,6 +58,27 @@ pipeline {
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/kartikeyasoft/micro.git', branch: 'main'
+            }
+        }
+
+        stage('Get Eureka IP from SSM') {
+            steps {
+                script {
+                    def eurekaIp = sh(script: """
+                        aws ssm get-parameter \
+                            --name "/exam/eureka/ip" \
+                            --region ${env.AWS_DEFAULT_REGION} \
+                            --query 'Parameter.Value' \
+                            --output text 2>/dev/null || echo ""
+                    """, returnStdout: true).trim()
+                    
+                    if (!eurekaIp || eurekaIp == 'None' || eurekaIp == 'null' || eurekaIp == '') {
+                        error "Eureka IP not found in SSM. Please run Eureka CD first and wait for completion."
+                    }
+                    
+                    env.EUREKA_IP = eurekaIp
+                    echo "✅ Retrieved Eureka IP from SSM: ${env.EUREKA_IP}"
+                }
             }
         }
 
@@ -133,6 +153,10 @@ pipeline {
         stage('Bake Golden Image') {
             steps {
                 script {
+                    echo "=========================================="
+                    echo "Building Golden AMI with Base: ${env.BASE_AMI_ID}"
+                    echo "=========================================="
+                    
                     withEnv([
                         "SERVICE_VERSION=${env.SERVICE_VERSION}",
                         "SERVICE_NAME=${env.SERVICE_NAME}",
@@ -143,6 +167,7 @@ pipeline {
                         "DB_NAME=${env.DB_NAME}",
                         "DB_USERNAME=${env.DB_USERNAME_USR}",
                         "DB_PASSWORD=${env.DB_PASSWORD}",
+                        "EUREKA_IP=${env.EUREKA_IP}",
                         "EUREKA_PORT=${env.EUREKA_PORT}",
                         "BASE_AMI_ID=${env.BASE_AMI_ID}"
                     ]) {
@@ -158,6 +183,7 @@ pipeline {
                                 echo "DB Host: ${DB_HOST}"
                                 echo "DB Port: ${DB_PORT}"
                                 echo "DB Name: ${DB_NAME}"
+                                echo "Eureka IP: ${EUREKA_IP}"
                                 echo "Eureka Port: ${EUREKA_PORT}"
                                 echo "Base AMI ID: ${BASE_AMI_ID}"
                                 echo "=========================================="
@@ -174,6 +200,7 @@ pipeline {
                                     -var "db_name=${DB_NAME}" \
                                     -var "db_username=${DB_USERNAME}" \
                                     -var "db_password=${DB_PASSWORD}" \
+                                    -var "eureka_ip=${EUREKA_IP}" \
                                     -var "eureka_port=${EUREKA_PORT}" \
                                     -var "source_ami=${BASE_AMI_ID}" \
                                     service2.pkr.hcl 2>&1 | tee build-output.txt
@@ -187,6 +214,7 @@ pipeline {
                                 
                                 echo "GOLDEN_AMI_ID=$AMI_ID" > golden-ami.properties
                                 echo "✅ Successfully created AMI: $AMI_ID"
+                                echo "✅ Used Base AMI: ${BASE_AMI_ID}"
                             '''
                             
                             script {
@@ -210,6 +238,7 @@ pipeline {
                     echo "=========================================="
                     echo "Version: ${env.SERVICE_VERSION}"
                     echo "AMI ID: ${env.AMI_ID}"
+                    echo "Eureka IP: ${env.EUREKA_IP}"
                     echo "=========================================="
                     
                     if (env.AMI_ID && env.AMI_ID != '' && env.AMI_ID =~ /^ami-[a-f0-9]{17}$/) {
@@ -224,7 +253,7 @@ pipeline {
                         
                         echo "✅ CD pipeline triggered successfully!"
                     } else {
-                        echo "⚠️ No valid AMI ID captured, skipping CD trigger"
+                        error "No valid AMI ID captured, cannot trigger CD pipeline"
                     }
                 }
             }
@@ -233,13 +262,20 @@ pipeline {
 
     post {
         success {
-            echo "🎉 Service2 CI completed successfully! AMI: ${env.AMI_ID}"
+            echo "=========================================="
+            echo "🎉 Service2 CI completed successfully!"
+            echo "=========================================="
+            echo "AMI ID: ${env.AMI_ID}"
+            echo "Version: ${env.SERVICE_VERSION}"
+            echo "Base AMI Used: ${env.BASE_AMI_ID}"
+            echo "=========================================="
         }
         failure {
+            echo "=========================================="
             echo "❌ Service2 CI failed!"
-            script {
-                echo "Current build result: ${currentBuild.currentResult}"
-            }
+            echo "=========================================="
+            echo "Please check the logs above for details"
+            echo "=========================================="
         }
     }
 }
