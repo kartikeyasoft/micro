@@ -40,13 +40,13 @@ source "amazon-ebs" "ami" {
 build {
   sources = ["source.amazon-ebs.ami"]
 
-  provisioner "shell" {
-    inline = [
-      "echo 'Starting AMI build...'",
-      "sudo apt-get update",
-      "sudo apt-get install -y openjdk-17-jre-headless curl wget",
-      "sudo systemctl enable ssh",
-      "echo 'AMI build completed at $(date)'"
+  provisioner "ansible" {
+    playbook_file   = "./ansible/playbook-ami.yml"
+    user            = "ubuntu"
+    use_proxy       = false
+    extra_arguments = [
+      "--verbose",
+      "-e", "ansible_python_interpreter=/usr/bin/python3"
     ]
   }
 }

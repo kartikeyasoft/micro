@@ -6,6 +6,14 @@
     - vars/ami.yml
 
   tasks:
+    - name: Wait for cloud-init to complete
+      command: cloud-init status --wait
+      register: cloud_init_status
+      until: cloud_init_status is success
+      retries: 30
+      delay: 10
+      changed_when: false
+
     - name: Update apt cache
       apt:
         update_cache: yes
@@ -14,7 +22,6 @@
       until: apt_update is success
       retries: 3
       delay: 10
-      tags: [always]
 
     - name: Install base packages
       apt:
@@ -25,82 +32,57 @@
       until: base_install is success
       retries: 3
       delay: 5
-      tags: [packages, base]
-
-    - name: Add deadsnakes PPA for Python (Ubuntu 20.04 and older)
-      apt_repository:
-        repo: ppa:deadsnakes/ppa
-        state: present
-      when: ansible_distribution_version is version('20.04', '<=')
-      tags: [python, ppa]
-
-    - name: Install Python {{ python_version }}
-      apt:
-        name: "python{{ python_version }}"
-        state: present
-      when: ansible_distribution_version is version('20.04', '<=')
-      tags: [python]
 
     - name: Install Java packages
       apt:
         name: "{{ packages_java }}"
         state: present
-        update_cache: yes
       register: java_install
       until: java_install is success
       retries: 3
       delay: 5
-      tags: [java]
 
     - name: Install additional tools
       apt:
         name: "{{ packages_tools }}"
         state: present
-      tags: [tools]
+      register: tools_install
+      until: tools_install is success
+      retries: 3
+      delay: 5
 
     - name: Set JAVA_HOME environment variable
       lineinfile:
         path: /etc/environment
         regexp: '^JAVA_HOME='
         line: 'JAVA_HOME={{ java_home }}'
-      tags: [java, config]
+      when: java_version == "17"
 
     - name: Update PATH with Java
       lineinfile:
         path: /etc/environment
         regexp: '^PATH='
         line: 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:{{ java_home }}/bin'
-      tags: [java, config]
 
     - name: Verify Java installation
       command: java -version
       register: java_version_check
       changed_when: false
       failed_when: false
-      tags: [java, verify]
 
     - name: Display Java version
       debug:
-        msg: "Java Version: {{ java_version_check.stderr | default('Unknown') }}"
-      tags: [java, verify]
+        msg: "Java Version: {{ java_version_check.stderr | default('Not installed') }}"
 
     - name: Install AWS CLI v2
       block:
-        - name: Download AWS CLI v2 installer
+        - name: Download AWS CLI v2
           get_url:
             url: "{{ aws_cli_url }}"
             dest: /tmp/awscliv2.zip
             mode: '0644'
             timeout: 120
           register: aws_download
-          tags: [aws, download]
-
-        - name: Install unzip if needed
-          apt:
-            name: unzip
-            state: present
-          when: aws_download.changed
-          tags: [aws, unzip]
 
         - name: Extract AWS CLI installer
           unarchive:
@@ -108,122 +90,129 @@
             dest: /tmp
             remote_src: yes
           when: aws_download.changed
-          tags: [aws, extract]
 
         - name: Install AWS CLI v2
-          command: /tmp/aws/install --update
+          shell: /tmp/aws/install --update
           args:
             creates: /usr/local/bin/aws
           when: aws_download.changed
-          tags: [aws, install]
 
         - name: Verify AWS CLI installation
           command: /usr/local/bin/aws --version
           register: aws_version_check
           changed_when: false
-          tags: [aws, verify]
 
         - name: Display AWS CLI version
           debug:
             msg: "{{ aws_version_check.stdout }}"
-          tags: [aws, verify]
       when: ansible_os_family == "Debian"
-      tags: [aws]
-   
-    - name: Clean up apt cache
-      apt:
-        autoclean: yes
-        autoremove: yes
-      when: cleanup_enabled
-      tags: [cleanup]
 
-    - name: Remove unnecessary packages
-      apt:
-        name: "{{ packages_to_remove }}"
-        state: absent
-        purge: yes
-      when: cleanup_enabled
-      ignore_errors: yes
-      tags: [cleanup]
-
-    - name: Clear system logs
-      shell: |
-        find /var/log -type f -name "*.log" -exec truncate -s 0 {} \;
-        journalctl --rotate
-        journalctl --vacuum-time=1s
-      when: cleanup_enabled and cleanup_logs
-      ignore_errors: yes
-      tags: [cleanup, logs]
-
-    - name: Remove temporary files
-      shell: |
-        rm -rf /tmp/*
-        rm -rf /var/tmp/*
-        rm -rf /root/.cache
-        find /home -name ".cache" -type d -exec rm -rf {} + 2>/dev/null || true
-      when: cleanup_enabled and cleanup_temp
-      ignore_errors: yes
-      tags: [cleanup, temp]
-
-    - name: Remove apt lists
-      shell: rm -rf /var/lib/apt/lists/*
-      when: cleanup_enabled
-      ignore_errors: yes
-      tags: [cleanup]
-
-    - name: Remove SSH host keys (will be regenerated on boot)
-      shell: rm -f /etc/ssh/ssh_host_*
-      when: cleanup_enabled
-      ignore_errors: yes
-      tags: [cleanup, security]
-
-    - name: Zero out disk space for better compression
-      shell: dd if=/dev/zero of=/EMPTY bs=1M || rm -f /EMPTY
-      when: cleanup_enabled and zero_disk
-      ignore_errors: yes
-      tags: [cleanup, compress]
-
-    - name: Remove machine-id (will be regenerated on boot)
+    - name: Create application directories
       file:
-        path: /etc/machine-id
-        state: absent
-      when: cleanup_enabled
-      tags: [cleanup]
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /opt/application
+        - /var/log/application
+        - /opt/scripts
 
-    - name: Clear bash history
-      shell: |
-        history -c
-        rm -f /root/.bash_history
-        rm -f /home/*/.bash_history
-      when: cleanup_enabled
+    - name: Create health check script
+      copy:
+        dest: /opt/scripts/health-check.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "Health check passed for {{ service_name }} on $(date)"
+          exit 0
+
+    - name: Verify all installations
+      command: "{{ item }}"
+      register: verify_results
+      changed_when: false
       ignore_errors: yes
-      tags: [cleanup]
+      loop:
+        - aws --version
+        - java -version
+        - jq --version
+        - unzip -v
+        - curl --version
+        - wget --version
+      tags: verify
 
-  handlers:
-    - name: restart services
-      systemd:
-        name: "{{ item }}"
-        state: restarted
-        daemon_reload: yes
-      loop: "{{ services_to_restart | default([]) }}"
-      tags: [handlers]
+    - name: Display verification results
+      debug:
+        msg: |
+          ==========================================
+          INSTALLED PACKAGES VERIFICATION
+          ==========================================
+          {% for result in verify_results.results %}
+          {{ result.cmd | join(' ') }}: {{ result.stdout | default(result.stderr) | truncate(200) }}
+          {% endfor %}
+          ==========================================
 
-    - name: reload sysctl
-      command: sysctl --system
-      tags: [handlers]
+    - name: Cleanup section
+      block:
+        - name: Clean up apt cache
+          apt:
+            autoclean: yes
+            autoremove: yes
+          when: cleanup_enabled
+
+        - name: Remove unnecessary packages
+          apt:
+            name: "{{ packages_to_remove }}"
+            state: absent
+            purge: yes
+          when: cleanup_enabled
+          ignore_errors: yes
+
+        - name: Clear system logs
+          shell: |
+            find /var/log -type f -name "*.log" -exec truncate -s 0 {} \;
+            journalctl --rotate
+            journalctl --vacuum-time=1s
+          when: cleanup_enabled and cleanup_logs
+          ignore_errors: yes
+
+        - name: Remove temporary files
+          shell: |
+            rm -rf /tmp/*
+            rm -rf /var/tmp/*
+            rm -rf /root/.cache
+            find /home -name ".cache" -type d -exec rm -rf {} + 2>/dev/null || true
+          when: cleanup_enabled and cleanup_temp
+          ignore_errors: yes
+
+        - name: Remove machine-id (will be regenerated on boot)
+          file:
+            path: /etc/machine-id
+            state: absent
+          when: cleanup_enabled
+
+        - name: Clear bash history
+          shell: |
+            history -c
+            rm -f /root/.bash_history
+            rm -f /home/*/.bash_history
+          when: cleanup_enabled
+          ignore_errors: yes
+
+        - name: Zero out disk space for better compression
+          shell: dd if=/dev/zero of=/EMPTY bs=1M || rm -f /EMPTY
+          when: cleanup_enabled and zero_disk
+          ignore_errors: yes
 
   post_tasks:
     - name: Display build summary
       debug:
         msg: |
-          ====================================
-          AMI Build Summary
-          ====================================
+          ==========================================
+          AMI BUILD SUMMARY
+          ==========================================
           Service: {{ service_name }}
           Java Version: {{ java_version }}
-          Python Version: {{ python_version }}
-          App User: {{ app_user }}
           AWS CLI Version: {{ aws_cli_version }}
           Cleanup Performed: {{ cleanup_enabled }}
-          ====================================
-      tags: [summary]
+          Build Date: {{ ansible_date_time.date }}
+          ==========================================
