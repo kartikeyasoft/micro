@@ -11,6 +11,14 @@
     eureka_port: "{{ lookup('env', 'EUREKA_PORT') | default('8761') }}"
 
   tasks:
+    - name: Verify Java installation
+      command: java -version
+      register: java_version
+      changed_when: false
+
+    - name: Display Java version
+      debug:
+        msg: "Java Version Installed: {{ java_version.stderr }}"
     # - name: Update apt cache
     #   apt:
     #     update_cache: yes
