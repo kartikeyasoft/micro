@@ -19,6 +19,12 @@ variable "service_version" {
   type = string
 }
 
+variable "source_ami" {
+  description = "Base AMI ID to use for the build"
+  type        = string
+}
+
+
 variable "nexus_url" {
   type    = string 
 }
@@ -32,7 +38,7 @@ source "amazon-ebs" "eureka" {
   ami_name        = "myapp-${var.service_name}-v${var.service_version}"
   instance_type   = "t3.micro"
   region          = "us-east-1"
-  source_ami      = "ami-0c7217cdde317cfec"  # Ubuntu 22.04
+  source_ami      = var.source_ami
   ssh_username    = "ubuntu"
 }
 
