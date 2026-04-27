@@ -24,12 +24,12 @@ source "amazon-ebs" "ami" {
 build {
   sources = ["source.amazon-ebs.ami"]
 
-  provisioner "shell" {
-    inline = [
-      "sudo apt-get update -y",
-      "sudo apt-get install -y curl wget unzip jq net-tools mysql-client openjdk-17-jre-headless",
-      "cd /tmp && curl -s 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip' && unzip -q awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip",
-      "echo 'Installation completed!'"
+  provisioner "ansible" {
+    playbook_file = "./ansible/playbook-ami.yml"
+    user          = "ubuntu"
+    extra_arguments = [
+      "--verbose",
+      "--ssh-extra-args=-o StrictHostKeyChecking=no"
     ]
   }
 }
